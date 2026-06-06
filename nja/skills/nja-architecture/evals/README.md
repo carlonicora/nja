@@ -17,7 +17,7 @@ Manual replay scenarios that verify Claude follows this skill's rules. Each `NN-
 ## When to run
 
 - After modifying `SKILL.md` (especially the routing table or `description`).
-- After modifying `.claude/hooks/remind-architecture.sh`.
+- After modifying this plugin's `hooks/remind-architecture.sh`.
 - Before bumping any version that touches the skill.
 
 ## v1 scenarios (5)

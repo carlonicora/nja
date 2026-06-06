@@ -21,6 +21,16 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, and `nja-verify`
 all invoke it and cite its reference docs.
 
+## Bundled hook
+
+The plugin ships a **`PreToolUse` hook** (`hooks/remind-architecture.sh`, wired via
+`hooks/hooks.json`) that fires before every `Edit`/`Write`/`MultiEdit`. When the file
+being edited matches the `nja-architecture` routing table (e.g. an `*.repository.ts` under
+`apps/api/src/features`), it injects a reminder to invoke the skill and points at the exact
+reference doc for that file. It is **soft** — a reminder only, it never blocks the edit.
+This makes the plugin self-enforcing: install it and the architecture nudge works without
+the consuming repo wiring anything up. (Requires `jq` on `PATH`.)
+
 ## Install
 
 ```bash
@@ -63,6 +73,9 @@ nja/
 └── nja/                        # the plugin
     ├── .claude-plugin/
     │   └── plugin.json         # plugin manifest
+    ├── hooks/
+    │   ├── hooks.json          # PreToolUse wiring
+    │   └── remind-architecture.sh
     └── skills/
         ├── nja-architecture/   # routing table + references/ + evals/
         ├── nja-generate/       # generator workflow + references/

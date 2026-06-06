@@ -18,7 +18,7 @@ If the task is to create a NEW entity (backend or frontend), use the full-chain 
 
 ## Routing table (file → references)
 
-> **NOTE:** These patterns mirror those in `.claude/hooks/remind-architecture.sh`. If you change one, change the other.
+> **NOTE:** These patterns mirror this plugin's `hooks/remind-architecture.sh` (a PreToolUse hook that fires before edits and reminds you to invoke this skill). If you change one, change the other.
 
 ### Backend (apps/api)
 
