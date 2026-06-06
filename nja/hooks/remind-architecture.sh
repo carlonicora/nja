@@ -5,6 +5,10 @@
 # Soft mode: reminder only, never blocks.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../scripts/nja-detect.sh
+. "$SCRIPT_DIR/../scripts/nja-detect.sh" 2>/dev/null || exit 0
+
 INPUT=$(cat)
 FILE_PATH=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // ""')
 # The script lives inside the plugin, not the target project, so derive the
@@ -13,6 +17,9 @@ PROJECT_ROOT=$(printf '%s' "$INPUT" | jq -r '.cwd // ""')
 [ -n "$PROJECT_ROOT" ] || PROJECT_ROOT="$PWD"
 
 [ -n "$FILE_PATH" ] || exit 0
+
+# Stay inert outside nja projects (the plugin is user-scoped, fires everywhere).
+nja_is_project "$PROJECT_ROOT" || exit 0
 
 # Resolve the file path relative to the project root.
 case "$FILE_PATH" in

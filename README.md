@@ -27,6 +27,13 @@ The plugin is **self-enforcing on install** — three layers, escalating from ad
 deterministic. All require `jq` on `PATH`; hooks run harness-side and cost **zero model
 context**.
 
+> **Scoped to nja projects only.** The plugin installs at user scope, so its hooks see
+> every repo — but they go completely inert unless the current repo is actually an nja
+> project (any tracked `package.json` depends on `@carlonicora/nestjs-neo4jsonapi` or
+> `@carlonicora/nextjs-jsonapi`, or the repo has an `nja.config.json`). So editing an
+> unrelated project — even one using Radix or NestJS — is never affected. (`nja-lint` run
+> manually always checks whatever you pass it, by design.)
+
 **1. `PreToolUse` reminder** (`hooks/remind-architecture.sh`) — fires before every
 `Edit`/`Write`/`MultiEdit`. When the target file matches the `nja-architecture` routing
 table (e.g. an `*.repository.ts` under `apps/api/src/features`), it injects a reminder to
@@ -101,7 +108,8 @@ nja/
     │   ├── remind-architecture.sh  # PreToolUse soft reminder
     │   └── architecture-gate.sh    # Stop gate (deterministic)
     ├── scripts/
-    │   └── nja-lint.sh             # deterministic anti-pattern checker
+    │   ├── nja-lint.sh             # deterministic anti-pattern checker
+    │   └── nja-detect.sh           # "is this an nja project?" guard
     └── skills/
         ├── nja-architecture/   # routing table + references/ + evals/
         ├── nja-generate/       # generator workflow + references/

@@ -9,14 +9,18 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINT="$SCRIPT_DIR/../scripts/nja-lint.sh"
+# shellcheck source=../scripts/nja-detect.sh
+. "$SCRIPT_DIR/../scripts/nja-detect.sh" 2>/dev/null || exit 0
 
 INPUT=$(cat)
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""')
 [ -n "$CWD" ] || CWD="$PWD"
 
-# Only gate inside a git work tree, and only if the linter is present.
+# Only gate inside a git work tree, only if the linter is present, and ONLY in
+# an nja project — the plugin is user-scoped and must stay inert elsewhere.
 git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 [ -f "$LINT" ] || exit 0
+nja_is_project "$CWD" || exit 0
 
 # Run the linter over the uncommitted diff (it derives scope from git status).
 OUT=$(cd "$CWD" && bash "$LINT" 2>/dev/null)
