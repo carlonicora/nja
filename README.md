@@ -21,15 +21,36 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, and `nja-verify`
 all invoke it and cite its reference docs.
 
-## Bundled hook
+## Enforcement (hooks + linter)
 
-The plugin ships a **`PreToolUse` hook** (`hooks/remind-architecture.sh`, wired via
-`hooks/hooks.json`) that fires before every `Edit`/`Write`/`MultiEdit`. When the file
-being edited matches the `nja-architecture` routing table (e.g. an `*.repository.ts` under
-`apps/api/src/features`), it injects a reminder to invoke the skill and points at the exact
-reference doc for that file. It is **soft** — a reminder only, it never blocks the edit.
-This makes the plugin self-enforcing: install it and the architecture nudge works without
-the consuming repo wiring anything up. (Requires `jq` on `PATH`.)
+The plugin is **self-enforcing on install** — three layers, escalating from advisory to
+deterministic. All require `jq` on `PATH`; hooks run harness-side and cost **zero model
+context**.
+
+**1. `PreToolUse` reminder** (`hooks/remind-architecture.sh`) — fires before every
+`Edit`/`Write`/`MultiEdit`. When the target file matches the `nja-architecture` routing
+table (e.g. an `*.repository.ts` under `apps/api/src/features`), it injects a reminder to
+invoke the skill and points at the exact reference doc. **Soft** — reminder only, never
+blocks.
+
+**2. `nja-lint`** (`scripts/nja-lint.sh`) — a zero-dependency, deterministic checker for
+the greppable anti-patterns in `nja-architecture/references/anti-patterns.md`
+(`fetch()` in frontend services, raw `result.records`, manual `SKIP/LIMIT`, `asChild`,
+`@radix-ui` imports, controllers importing repositories, `@IsString()` on date DTOs, …).
+Two tiers — **BLOCKING** (never correct) and **WARN** (heuristic). Run it directly:
+
+```bash
+# check specific files, or omit args to check `git status` (the uncommitted diff)
+nja/scripts/nja-lint.sh apps/api/src/features/crm/account/repositories/account.repository.ts
+```
+
+Suppress a genuine false positive with a comment containing `nja-lint-ignore` on that line.
+
+**3. `Stop` gate** (`hooks/architecture-gate.sh`) — runs `nja-lint` over the uncommitted
+diff when Claude tries to end its turn. If any **BLOCKING** violation remains, it **blocks
+completion** and feeds the violation list back, so a turn cannot be declared "done" with
+mechanical architecture violations in the diff. It's grep-fast (sub-second) — no build or
+tests — and is soft on non-git directories and when warnings are the only finding.
 
 ## Install
 
@@ -74,8 +95,11 @@ nja/
     ├── .claude-plugin/
     │   └── plugin.json         # plugin manifest
     ├── hooks/
-    │   ├── hooks.json          # PreToolUse wiring
-    │   └── remind-architecture.sh
+    │   ├── hooks.json              # PreToolUse + Stop wiring
+    │   ├── remind-architecture.sh  # PreToolUse soft reminder
+    │   └── architecture-gate.sh    # Stop gate (deterministic)
+    ├── scripts/
+    │   └── nja-lint.sh             # deterministic anti-pattern checker
     └── skills/
         ├── nja-architecture/   # routing table + references/ + evals/
         ├── nja-generate/       # generator workflow + references/
