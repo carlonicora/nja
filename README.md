@@ -15,6 +15,7 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 |---|---|
 | **`nja-architecture`** | Before editing or creating any TypeScript file under `apps/api/src/features`, `apps/web/src/features`, or `packages/*/src`. Routes to the layer-specific reference doc (entity, DTO, repository, service, controller, model, interface, service, component) and surfaces the NestJS + Neo4j + JSON:API rules. The single source of truth — the other skills defer to it. |
 | **`nja-generate`** | Creating, scaffolding, or generating a new feature module or entity (backend, frontend, or both). Drives the `generate-module` / `generate-web-module` generators from a single JSON "module shape". |
+| **`nja-arrows`** | Generating modules from an Arrows.app diagram (or any `{nodes, relationships, style}` graph/ER JSON export). Translates the diagram into confirmed `structure/*.json` — asking per node for what the diagram can't encode — then hands off to `nja-generate`. |
 | **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. |
 | **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. |
 
@@ -115,6 +116,7 @@ nja/
     └── skills/
         ├── nja-architecture/   # routing table + references/ + evals/
         ├── nja-generate/       # generator workflow + references/
+        ├── nja-arrows/         # Arrows.app diagram → structure/*.json → nja-generate
         ├── nja-writing-plan/   # plan-writing wrapper
         └── nja-verify/         # architecture audit
 ```

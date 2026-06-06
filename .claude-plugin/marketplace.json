@@ -1,6 +1,6 @@
 {
   "name": "nja",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Architecture, generation, planning, and verification skills for nestjs-neo4jsonapi + nextjs-jsonapi monorepos",
   "author": "carlonicora",
   "owner": {
@@ -10,8 +10,8 @@
   "plugins": [
     {
       "name": "nja",
-      "version": "1.4.0",
-      "description": "Skills for building apps with nestjs-neo4jsonapi + nextjs-jsonapi: architecture rules, module generators, plan writing, and architecture audits",
+      "version": "1.5.0",
+      "description": "Skills for building apps with nestjs-neo4jsonapi + nextjs-jsonapi: architecture rules, module generators, diagram import, plan writing, and architecture audits",
       "source": "./nja"
     }
   ]
