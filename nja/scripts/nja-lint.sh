@@ -65,8 +65,12 @@ check_file() {
 
   case "$f" in
   *apps/web/*)
-    flag "$f" '\bfetch\s*\(' BLOCKING fetch-in-frontend \
-      "Use callApi(), never fetch() directly" "references/frontend/03-services.md"
+    # Only flag fetch() to the app's OWN API (literal absolute path). External
+    # fetches (S3 presigned uploads) and local functions named fetch() are fine.
+    while IFS=: read -r ln _; do
+      [ -n "$ln" ] && report "$f" "$ln" BLOCKING fetch-in-frontend \
+        "Use callApi(), never fetch() the app's own API" "references/frontend/03-services.md"
+    done < <(grep -nE "fetch\\([[:space:]]*['\"\`]/" "$f" 2>/dev/null | grep -v 'nja-lint-ignore')
     flag "$f" '\basChild\b' BLOCKING radix-aschild \
       "Base UI: use the render prop, never asChild" "references/frontend/04-components.md"
     ;;
@@ -74,8 +78,8 @@ check_file() {
 
   case "$f" in
   *apps/api/src/features/*)
-    flag "$f" '\.records\[|result\.records' BLOCKING raw-neo4j-records \
-      "Return typed objects via readOne()/readMany(), never raw result.records" "references/backend/03-repositories.md"
+    flag "$f" 'return[[:space:]]+result\.records|\.records\[[0-9]*\]\.get\(' WARN raw-neo4j-records \
+      "Prefer readOne()/readMany() — verify this returns a typed model, not a raw node" "references/backend/03-repositories.md"
     flag "$f" '\bSKIP\b[[:space:]]+(\$|\{|[0-9])' BLOCKING manual-pagination \
       "Use the {CURSOR} placeholder, never manual SKIP/LIMIT" "references/backend/03-repositories.md"
     flag "$f" '\.neo4j\.(read|write|run)\(' WARN raw-neo4j-query \

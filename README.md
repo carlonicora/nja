@@ -42,11 +42,13 @@ blocks.
 
 **2. `nja-lint`** (`scripts/nja-lint.sh`) — a zero-dependency, deterministic checker for
 the greppable anti-patterns in `nja-architecture/references/anti-patterns.md`
-(`fetch()` in frontend services, raw `result.records`, manual `SKIP/LIMIT`,
-hand-written Cypher with no `buildDefaultMatch()` — a cross-tenant company-scope leak,
-`asChild`, `@radix-ui` imports, controllers importing repositories, `@IsString()` on date
-DTOs, …).
-Two tiers — **BLOCKING** (never correct) and **WARN** (heuristic). Run it directly:
+(`fetch()` to the app's own API, manual `SKIP/LIMIT`, hand-written Cypher with no
+`buildDefaultMatch()` — a cross-tenant company-scope leak, `asChild`, `@radix-ui` imports,
+controllers importing repositories; plus WARN-level heuristics like raw `result.records`
+access and `@IsString()` on date DTOs).
+Two tiers — **BLOCKING** (calibrated near-zero false positives) and **WARN** (heuristic).
+The `fetch` rule targets only literal own-API calls, so S3 presigned uploads and local
+functions named `fetch()` are not flagged. Run it directly:
 
 ```bash
 # check specific files, or omit args to check `git status` (the uncommitted diff)
