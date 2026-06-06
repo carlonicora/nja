@@ -35,8 +35,10 @@ blocks.
 
 **2. `nja-lint`** (`scripts/nja-lint.sh`) — a zero-dependency, deterministic checker for
 the greppable anti-patterns in `nja-architecture/references/anti-patterns.md`
-(`fetch()` in frontend services, raw `result.records`, manual `SKIP/LIMIT`, `asChild`,
-`@radix-ui` imports, controllers importing repositories, `@IsString()` on date DTOs, …).
+(`fetch()` in frontend services, raw `result.records`, manual `SKIP/LIMIT`,
+hand-written Cypher with no `buildDefaultMatch()` — a cross-tenant company-scope leak,
+`asChild`, `@radix-ui` imports, controllers importing repositories, `@IsString()` on date
+DTOs, …).
 Two tiers — **BLOCKING** (never correct) and **WARN** (heuristic). Run it directly:
 
 ```bash

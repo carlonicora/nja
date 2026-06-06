@@ -78,6 +78,16 @@ check_file() {
       "Return typed objects via readOne()/readMany(), never raw result.records" "references/backend/03-repositories.md"
     flag "$f" '\bSKIP\b[[:space:]]+(\$|\{|[0-9])' BLOCKING manual-pagination \
       "Use the {CURSOR} placeholder, never manual SKIP/LIMIT" "references/backend/03-repositories.md"
+    flag "$f" '\.neo4j\.(read|write|run)\(' WARN raw-neo4j-query \
+      "Raw Neo4j query — prefer readOne()/readMany() and confirm buildDefaultMatch() is scoping by company" "references/backend/03-repositories.md"
+    # Hand-written Cypher with no company scoping anywhere in the file (security guardrail).
+    # High precision: a feature file that runs a raw query and has an inline MATCH but never
+    # calls buildDefaultMatch() is almost certainly leaking cross-company data.
+    if grep -qE '\.neo4j\.(read|write|run)\(' "$f" && grep -qE 'MATCH[[:space:]]*\(' "$f" && ! grep -q 'buildDefaultMatch' "$f"; then
+      mln=$(grep -nE 'MATCH[[:space:]]*\(' "$f" | grep -v 'nja-lint-ignore' | head -1 | cut -d: -f1)
+      [ -n "$mln" ] && report "$f" "$mln" BLOCKING manual-query-no-company-scope \
+        "Hand-written Cypher with no buildDefaultMatch() in this file — company filtering is missing (cross-tenant data leak)" "references/backend/03-repositories.md"
+    fi
     ;;
   esac
 
