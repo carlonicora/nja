@@ -1,6 +1,6 @@
 ---
 name: nja-writing-plan
-description: Use when about to write an implementation plan in this project — typically right after brainstorming finishes a spec, or when the brainstorming flow asks if it should write the plan, or when the user asks for a plan. Wraps superpowers:writing-plans with nja-architecture compliance: enforces inline citations to canonical examples, a structured self-audit before the plan is saved, skill-wins-over-plan in sub-agent dispatch, and an architecture audit step inside the final verification task.
+description: Use when about to write an implementation plan in this project — typically right after brainstorming finishes a spec, or when the brainstorming flow asks if it should write the plan, or when the user asks for a plan. Wraps superpowers:writing-plans with nja-architecture compliance — it enforces inline citations to canonical examples, a structured self-audit before the plan is saved, skill-wins-over-plan in sub-agent dispatch, and an architecture audit step inside the final verification task.
 ---
 
 # Writing plans (nja)
