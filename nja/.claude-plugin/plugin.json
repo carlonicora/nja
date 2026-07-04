@@ -1,7 +1,7 @@
 {
   "name": "nja",
-  "version": "1.5.0",
-  "description": "Skills for building apps with nestjs-neo4jsonapi + nextjs-jsonapi: architecture rules, module generators, diagram import, plan writing, and architecture audits",
+  "version": "1.6.0",
+  "description": "Skills for building apps with nestjs-neo4jsonapi + nextjs-jsonapi: architecture rules, module generators, diagram import, plan writing, architecture audits, and session handoffs",
   "author": {
     "name": "carlonicora"
   },

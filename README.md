@@ -18,6 +18,7 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-arrows`** | Generating modules from an Arrows.app diagram (or any `{nodes, relationships, style}` graph/ER JSON export). Translates the diagram into confirmed `structure/*.json` — asking per node for what the diagram can't encode — then hands off to `nja-generate`. |
 | **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. |
 | **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. |
+| **`nja-handoff`** | Ending a session whose work another agent will continue. Compacts the conversation into a handoff document (saved to the OS temp dir, sensitive data redacted) with a "suggested skills" section, referencing existing artifacts instead of duplicating them. |
 
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, and `nja-verify`
 all invoke it and cite its reference docs.
@@ -118,7 +119,8 @@ nja/
         ├── nja-generate/       # generator workflow + references/
         ├── nja-arrows/         # Arrows.app diagram → structure/*.json → nja-generate
         ├── nja-writing-plan/   # plan-writing wrapper
-        └── nja-verify/         # architecture audit
+        ├── nja-verify/         # architecture audit
+        └── nja-handoff/        # session → handoff document for the next agent
 ```
 
 ## License
