@@ -38,8 +38,8 @@ If the task is to create a NEW entity (backend or frontend), use the full-chain 
 | `apps/web/src/features/*/data/*Interface.ts` | `references/frontend/02-interfaces.md` → `references/date-handling.md` (if any getter is `Date`) |
 | `apps/web/src/features/*/data/*Service.ts` | `references/frontend/03-services.md` → `references/anti-patterns.md` |
 | `apps/web/src/features/*/data/*.ts` (other) | `references/frontend/01-models.md` → `references/date-handling.md` (if `rehydrate()` or `createJsonApi()` touches a date/datetime) |
-| `apps/web/src/features/*/components/**` (or `**/*.tsx` under features) | `references/frontend/04-components.md` |
-| Creating a NEW frontend entity (full chain) | `references/core-principles.md` → `references/frontend/02-interfaces.md` → `references/frontend/01-models.md` → `references/frontend/03-services.md` → `references/frontend/04-components.md` → `references/frontend/template.md` → `references/date-handling.md` (if any field is a date/datetime) |
+| `apps/web/src/features/*/components/**` (or `**/*.tsx` under features) | `references/frontend/04-components.md` → `references/frontend/05-typography.md` (if the edit styles text) |
+| Creating a NEW frontend entity (full chain) | `references/core-principles.md` → `references/frontend/02-interfaces.md` → `references/frontend/01-models.md` → `references/frontend/03-services.md` → `references/frontend/04-components.md` → `references/frontend/05-typography.md` → `references/frontend/template.md` → `references/date-handling.md` (if any field is a date/datetime) |
 
 ### Shared packages
 
@@ -116,4 +116,5 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 | `references/frontend/02-interfaces.md` | TypeScript interfaces for models |
 | `references/frontend/03-services.md` | AbstractService, callApi(), EndpointCreator |
 | `references/frontend/04-components.md` | Base UI patterns (NOT Radix), render prop, trigger composition |
+| `references/frontend/05-typography.md` | Typography roles: one Tailwind recipe per text role, color tokens, header-markup rules |
 | `references/frontend/template.md` | Copy-paste template for new frontend entities |
