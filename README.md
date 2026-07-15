@@ -17,11 +17,15 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-generate`** | Creating, scaffolding, or generating a new feature module or entity (backend, frontend, or both). Drives the `generate-module` / `generate-web-module` generators from a single JSON "module shape". |
 | **`nja-arrows`** | Generating modules from an Arrows.app diagram (or any `{nodes, relationships, style}` graph/ER JSON export). Translates the diagram into confirmed `structure/*.json` — asking per node for what the diagram can't encode — then hands off to `nja-generate`. |
 | **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. |
+| **`nja-delegate-implementation`** | Handing a written plan to a fresh session to implement. Writes a temp markdown file that *is* the prompt for that session: `@`-links to the spec and plan, the context that dies with the conversation (session decisions, repo state, resolved commands), and the execution protocol — parallel task dispatch, no per-task tests, one lint/build/test at the end, `nja-verify` audit, no commits. |
 | **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. |
 | **`nja-handoff`** | Ending a session whose work another agent will continue. Compacts the conversation into a handoff document (saved to the OS temp dir, sensitive data redacted) with a "suggested skills" section, referencing existing artifacts instead of duplicating them. |
 
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, and `nja-verify`
 all invoke it and cite its reference docs.
+
+The plan-driven path runs `nja-writing-plan` → `nja-delegate-implementation` → (fresh
+session) → `nja-verify`.
 
 ## Enforcement (hooks + linter)
 
@@ -119,6 +123,7 @@ nja/
         ├── nja-generate/       # generator workflow + references/
         ├── nja-arrows/         # Arrows.app diagram → structure/*.json → nja-generate
         ├── nja-writing-plan/   # plan-writing wrapper
+        ├── nja-delegate-implementation/  # plan → prompt file for a fresh session
         ├── nja-verify/         # architecture audit
         └── nja-handoff/        # session → handoff document for the next agent
 ```
