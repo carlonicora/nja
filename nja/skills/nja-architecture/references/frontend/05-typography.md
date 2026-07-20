@@ -60,7 +60,7 @@ the app copy wins (its token values track the app's `globals.css`).
 | 11 | Error text | `text-destructive text-xs/relaxed` | `FieldError` | A validation error attached to a field. |
 | 12 | Caption / detail-label | `text-muted-foreground text-xs` | inline / `DetailField` | The muted label of a read-only detail pair, or any small caption. |
 | 13 | Detail value | `text-sm` | `DetailField` | The value half of a read-only label/value pair. |
-| 14 | Link | `text-primary font-medium hover:underline` | package `Link` | Any inline navigational text link. |
+| 14 | Link | `text-primary font-medium` | package `Link` | Any inline navigational text link. NEVER underlined, including on hover. |
 | 15 | Numeric | `text-xs tabular-nums text-right` | inline | Numbers, currency, durations in table cells or aligned columns. |
 | 16 | Semantic status | `text-success` / `text-warning` / `text-destructive` | tokens | Text whose color conveys state. |
 | 17 | Input text | `text-sm md:text-xs/relaxed` | Input/Textarea | Text the user types inside an input/textarea. |
@@ -102,6 +102,7 @@ Reference values (a360ai `apps/web/src/app/globals.css`; per-app values may diff
 | Hand-rolled pastel pill `bg-green-100 text-green-800` | `<Badge variant="softGreen">` |
 | Raw `<Label className="text-sm">` in a form | `FormFieldWrapper` (label renders `text-xs/relaxed font-medium`) |
 | Ad-hoc `<p className="text-sm text-destructive">` error | `FieldError` / `text-destructive text-xs/relaxed` |
+| `underline` / `hover:underline` on a link | Links are NEVER underlined — color and weight carry the affordance |
 
 ---
 
