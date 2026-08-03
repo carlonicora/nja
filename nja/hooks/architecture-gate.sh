@@ -16,6 +16,11 @@ INPUT=$(cat)
 CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // ""')
 [ -n "$CWD" ] || CWD="$PWD"
 
+# Per-project kill switch: `touch .claude/nja-gate-off` in a checkout silences
+# the gate there (delete the file to re-enable). NJA_GATE_DISABLE=1 works too.
+[ -n "${NJA_GATE_DISABLE:-}" ] && exit 0
+[ -f "$CWD/.claude/nja-gate-off" ] && exit 0
+
 # Only gate inside a git work tree, only if the linter is present, and ONLY in
 # an nja project — the plugin is user-scoped and must stay inert elsewhere.
 git -C "$CWD" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
