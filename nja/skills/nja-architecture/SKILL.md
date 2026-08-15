@@ -29,6 +29,7 @@ If the task is to create a NEW entity (backend or frontend), use the full-chain 
 | `apps/api/src/features/**/*.repository.ts` (or under `*/repositories/*`) | `references/backend/03-repositories.md` → `references/anti-patterns.md` → `references/date-handling.md` (if any custom Cypher writes a date/datetime) |
 | `apps/api/src/features/**/*.service.ts` (or under `*/services/*`) | `references/backend/04-services.md` |
 | `apps/api/src/features/**/*.controller.ts` (or under `*/controllers/*`) | `references/backend/05-controllers.md` → `references/backend/02-dtos.md` |
+| `apps/api/src/features/*/agent/**` (agent nodes, prompts, schemas — anything that calls an LLM) | `references/backend/06-llm-calls.md` → `references/backend/04-services.md` |
 | Creating a NEW backend entity (full chain) | `references/core-principles.md` → `references/backend/01-entity-basics.md` → `references/backend/02-dtos.md` → `references/backend/03-repositories.md` → `references/backend/04-services.md` → `references/backend/05-controllers.md` → `references/backend/template.md` → `references/date-handling.md` (if any field is a date/datetime) |
 
 ### Frontend (apps/web)
@@ -111,6 +112,7 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 | `references/backend/03-repositories.md` | AbstractRepository, Cypher queries, company filtering, pagination |
 | `references/backend/04-services.md` | AbstractService, business logic, JSON:API response building |
 | `references/backend/05-controllers.md` | HTTP handlers, auth guards, cache invalidation |
+| `references/backend/06-llm-calls.md` | LLM call design: inputSchema + .describe() on every field, output schema shape rules, prompt safety, attribution, tools |
 | `references/backend/template.md` | Copy-paste template for new backend entities |
 | `references/frontend/01-models.md` | AbstractApiData, rehydrate(), createJsonApi() |
 | `references/frontend/02-interfaces.md` | TypeScript interfaces for models |

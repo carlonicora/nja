@@ -46,6 +46,10 @@ DOC=""
 # skills/nja-architecture/SKILL.md. If you change one, change the other.
 case "$REL" in
   # Backend
+  # Agent dirs first: agent/nodes/*.service.ts must route to the LLM doc,
+  # not the generic services doc.
+  apps/api/src/features/*/agent/*)
+    DOC="references/backend/06-llm-calls.md → references/backend/04-services.md" ;;
   apps/api/src/features/*/entities/*)
     DOC="references/core-principles.md → references/backend/01-entity-basics.md" ;;
   apps/api/src/features/*/dtos/*|apps/api/src/features/*.dto.ts|apps/api/src/features/*/*.dto.ts)
