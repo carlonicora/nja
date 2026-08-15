@@ -74,6 +74,7 @@ Read this file **first** before working on any entity. These principles apply to
 | [backend/03-repositories.md](backend/03-repositories.md) | Writing data access queries |
 | [backend/04-services.md](backend/04-services.md) | Adding business logic |
 | [backend/05-controllers.md](backend/05-controllers.md) | Adding HTTP endpoints |
+| [backend/06-llm-calls.md](backend/06-llm-calls.md) | Writing any LLM call, agent node, or prompt file |
 | [frontend/01-models.md](frontend/01-models.md) | Creating/modifying frontend models |
 | [frontend/03-services.md](frontend/03-services.md) | Writing API calls |
 | [anti-patterns.md](anti-patterns.md) | Reviewing code for mistakes |
