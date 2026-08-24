@@ -35,12 +35,37 @@ nja-deps-sweep.sh [--dry-run | --apply] [--root <path>] [--reject <pkg,pkg,...>]
 USAGE
 }
 
+# require_optarg <option> <remaining-count> <candidate-value>
+# Guards every value-taking option below. `shift 2` in bash is all-or-nothing:
+# with only one argument left it shifts nothing, so a bare trailing `--root`
+# (or `--reject`) would leave $1 unchanged and spin the while-loop forever.
+# A value that itself looks like another flag (e.g. `--root --dry-run`) is
+# never legitimate here either — every real value is a path, a comma list,
+# or (in sibling scripts) an integer, none of which start with "-". Same
+# shape is meant to be copied into the sibling scripts' parsers, not shared
+# via nja-deps-lib.sh.
+require_optarg() {
+  local opt="$1" remaining="$2" val="${3:-}"
+  if [ "$remaining" -lt 2 ]; then
+    printf '%s requires a value\n' "$opt" >&2
+    usage >&2
+    exit 1
+  fi
+  case "$val" in
+    -*)
+      printf '%s requires a value, got option-like argument: %s\n' "$opt" "$val" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run) APPLY=0; shift ;;
     --apply)   APPLY=1; shift ;;
-    --root)    ROOT="${2:-}"; shift 2 ;;
-    --reject)  REJECT="${2:-}"; shift 2 ;;
+    --root)    require_optarg --root "$#" "${2:-}"; ROOT="$2"; shift 2 ;;
+    --reject)  require_optarg --reject "$#" "${2:-}"; REJECT="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) printf 'unknown option: %s\n' "$1" >&2; usage >&2; exit 1 ;;
   esac
