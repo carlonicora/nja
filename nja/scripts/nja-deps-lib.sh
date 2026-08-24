@@ -56,6 +56,7 @@ nja_workspaces() {
   done <<EOF
 $(nja_yaml_list "$yaml" packages)
 EOF
+  return 0
 }
 
 # nja_yaml_list <file> <block> — the "- item" entries of a top-level block.
@@ -69,6 +70,35 @@ nja_yaml_list() {
       sub(/[[:space:]]*#.*$/, "", line)
       gsub(/^['"'"'"]+|['"'"'"]+$/, "", line)
       if (line != "") print line
+    }
+  ' "$1"
+}
+
+# ── pnpm-workspace.yaml: key/value blocks ────────────────────────────────────
+# nja_yaml_entries <file> <block>  →  "key<TAB>value" per entry.
+# Mirrors the parser in each app's scripts/check-dep-drift.js, which is the
+# reference implementation for the quoting these files actually use.
+nja_yaml_entries() {
+  awk -v want="$2" '
+    index($0, want ":") == 1 { inb = 1; next }
+    inb && /^[^[:space:]#]/  { inb = 0 }
+    !inb                     { next }
+    /^[[:space:]]*#/         { next }
+    /^[[:space:]]*$/         { next }
+    /^[[:space:]]*-/         { next }
+    {
+      line = $0
+      sub(/[[:space:]]*#.*$/, "", line)
+      idx = index(line, ":")
+      if (idx == 0) next
+      k = substr(line, 1, idx - 1)
+      v = substr(line, idx + 1)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", k)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+      gsub(/^['"'"'"]+|['"'"'"]+$/, "", k)
+      gsub(/^['"'"'"]+|['"'"'"]+$/, "", v)
+      if (k == "" || v == "") next
+      printf "%s\t%s\n", k, v
     }
   ' "$1"
 }
