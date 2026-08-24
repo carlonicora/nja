@@ -10,7 +10,7 @@ related_docs:
   - backend-03-repositories
   - frontend-03-services
 enforcement: critical
-last_updated: "2026-03-01"
+last_updated: "2026-08-24"
 ---
 
 # Anti-Patterns (DON'T DO THIS)
@@ -53,6 +53,11 @@ Read this file when:
 | `response.data.attributes.date = data.date` with `data.date: Date` | `JSON.stringify` UTC-shifts and can lose a day (use `formatLocalDate`) |
 | `get date(): string` on a frontend interface | Type lie — wire is a string but in-memory must be `Date` |
 | `@IsString()` for a date attribute on a DTO | Accepts garbage like `"yesterday"` (use `@IsDateString()`) |
+| `jest.fn()`, `jest.mock()`, `import ... from "@jest/globals"` | Jest API in a Vitest project — use `vi.*` |
+| `jest.config.js`, `jest-e2e.json`, a `jest` / `ts-jest` / `@types/jest` dependency | Dead Jest configuration — delete it |
+| A `vi.mock` factory referencing a module-scope `const` | Vitest hoists the factory above it — "Cannot access before initialization" (use `vi.hoisted()`) |
+| `vi.importActual()` inside a non-`async` factory | `importActual` is async, unlike `jest.requireActual` |
+| `unplugin-swc` in a `vitest.config.ts` with no `oxc: false` | Oxc owns the transform; `decoratorMetadata` is not guaranteed, breaking reflection-resolved DI |
 
 ---
 

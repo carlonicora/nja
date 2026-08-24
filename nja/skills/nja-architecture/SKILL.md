@@ -82,6 +82,40 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 - Never construct JSON:API payloads manually — the model handles serialization
 - This project uses **Base UI** (not Radix). Never use `asChild`. Never wrap `<Button>` inside trigger components. Use the `render` prop.
 
+### Testing (cross-cutting)
+
+- The test runner is **Vitest**. A `jest.*` call, a `jest.config.js`, a `jest-e2e.json`,
+  or a `jest` / `ts-jest` / `@types/jest` dependency is a defect, not a style choice —
+  fix it rather than matching it
+- Mock with `vi.fn()` / `vi.mock()` / `vi.spyOn()`. A `vi.mock` factory CANNOT reference a
+  module-scope binding (Vitest hoists the factory above it) — take the value from
+  `vi.hoisted()` instead. Jest allowed this; Vitest does not
+- `vi.importActual()` is async. A factory using it MUST be `async` — unlike Jest's
+  synchronous `jest.requireActual()`
+- With `globals: true`, `describe` / `it` / `expect` need no import, but **`vi` is not a
+  global** — import it from `vitest` in any file that uses it
+- An api `vitest.config.ts` using `unplugin-swc` MUST set `oxc: false`. Vitest 4 handles
+  the default transform with Oxc, which makes `esbuild: false` inert; without it Oxc owns
+  the TypeScript transform and `decoratorMetadata` — which every reflection-resolved DI
+  token depends on — is not guaranteed
+- The `include` pattern MUST cover every directory holding specs. `src/**` alone silently
+  drops specs under `scripts/**`, and the suite still reports green
+- **Vitest mocks are strict about exports.** Jest returned `undefined` for a key the factory
+  did not declare; Vitest throws `No "X" export is defined on the … mock`. When stubbing a
+  large barrel, wrap the factory object in `new Proxy({…}, { has: () => true })` rather than
+  inventing stub values — a made-up value can flip a falsy check and silently change what a
+  test proves. If the mocked module is awaited, the Proxy must also answer `then` with
+  `undefined`, or Vitest treats the stub as a thenable
+- **Vitest CONSTRUCTS a `mockImplementation` when the subject is called with `new`.** Jest
+  called the implementation and used its return value. An arrow function therefore throws
+  "is not a constructor" — use a `function` expression for any stub reached via `new X()`
+- `vi.mock()` takes NO third argument. Jest's `{ virtual: true }` is a tsc error (TS2554);
+  drop it — the runtime already ignored it
+- A spec MUST import every test global it uses (`describe` / `it` / `expect` / `beforeEach`
+  / `afterEach`) unless the package's `tsconfig` sets `types: ["vitest/globals"]`. A file
+  that imports only `vi` and then calls bare `expect()` passes at runtime under
+  `globals: true` but fails `tsc` with TS2304 / TS2582
+
 ### Dates and DateTimes (cross-cutting)
 - A calendar date (no time) MUST be `type: "date"` in the entity descriptor — never `"string"`
 - A point-in-time (timestamped event) MUST be `type: "datetime"` — never `"string"`, never `"date"`
