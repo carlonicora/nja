@@ -25,3 +25,50 @@ nja_resolve_root() {
     (cd "$p" && pwd)
   fi
 }
+
+# ── pnpm-workspace.yaml: packages ────────────────────────────────────────────
+# nja_workspaces <root>
+# One repo-relative directory per line: "." (the root manifest) plus every
+# directory matched by the `packages:` globs that holds a package.json.
+# Hardcoding the six historical paths is what left a360ai (three apps, no
+# scripts/update.sh) unswept — always discover.
+nja_workspaces() {
+  local root="$1" yaml="$1/pnpm-workspace.yaml"
+  [ -f "$yaml" ] || return 1
+  printf '.\n'
+  local glob base entry
+  while IFS= read -r glob; do
+    [ -n "$glob" ] || continue
+    case "$glob" in
+      */\*)
+        base="${glob%/\*}"
+        [ -d "$root/$base" ] || continue
+        for entry in "$root/$base"/*/; do
+          [ -f "${entry}package.json" ] || continue
+          entry="${entry%/}"
+          printf '%s/%s\n' "$base" "${entry##*/}"
+        done
+        ;;
+      *)
+        [ -f "$root/$glob/package.json" ] && printf '%s\n' "$glob"
+        ;;
+    esac
+  done <<EOF
+$(nja_yaml_list "$yaml" packages)
+EOF
+}
+
+# nja_yaml_list <file> <block> — the "- item" entries of a top-level block.
+nja_yaml_list() {
+  awk -v want="$2" '
+    index($0, want ":") == 1 { inb = 1; next }
+    inb && /^[^[:space:]#]/  { inb = 0 }
+    inb && /^[[:space:]]*-/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      sub(/[[:space:]]*#.*$/, "", line)
+      gsub(/^['"'"'"]+|['"'"'"]+$/, "", line)
+      if (line != "") print line
+    }
+  ' "$1"
+}
