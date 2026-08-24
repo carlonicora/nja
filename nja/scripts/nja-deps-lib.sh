@@ -108,16 +108,65 @@ nja_yaml_entries() {
 # nothing else — indentation, quoting, trailing comments and every other line
 # survive byte-for-byte. These files carry incident commentary that is worth
 # more than the versions; a reformatting write would be a regression.
+#
+# Exit codes:
+#   0  substituted; the file was updated in place.
+#   1  the key was not found as a scalar entry in that block — soft/benign
+#      (also the outcome for a key that only appears as a nested-map header,
+#      e.g. `react:` with indented children and no inline value). The file
+#      is left byte-identical and no temp file is left behind.
+#   2  hard failure: missing/unreadable file, unwritable directory, an awk
+#      error, a truncated write, or a failed mv. The file is left
+#      byte-identical and no temp file is left behind.
 nja_yaml_set_version() {
   local file="$1" block="$2" key="$3" new="$4"
   local tmp="$file.nja.tmp"
+  local rc=0
+
+  if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+    return 2
+  fi
+  local dir="${file%/*}"
+  [ "$dir" = "$file" ] && dir="."
+  if [ ! -w "$dir" ]; then
+    return 2
+  fi
+
+  trap 'rm -f "$tmp"' INT TERM HUP
+
   awk -v want="$block" -v key="$key" -v new="$new" '
     BEGIN { inb = 0; done = 0 }
     index($0, want ":") == 1 { inb = 1; print; next }
     inb && /^[^[:space:]#]/  { inb = 0 }
     {
+      matched = 0
       if (inb && !done && $0 !~ /^[[:space:]]*#/) {
-        idx = index($0, ":")
+        # Determine where the key ends and the value separator (":") is.
+        # A key whose first non-space character is a quote may itself
+        # contain a colon (e.g. '"'"'react:native'"'"'), so the separator is the
+        # first ":" AFTER the matching closing quote, not the first ":"
+        # in the line.
+        i = 1
+        while (i <= length($0) && substr($0, i, 1) ~ /[[:space:]]/) i++
+        firstch = (i <= length($0)) ? substr($0, i, 1) : ""
+        if (firstch == "\047" || firstch == "\"") {
+          qch = firstch
+          closepos = 0
+          j = i + 1
+          while (j <= length($0)) {
+            if (substr($0, j, 1) == qch) { closepos = j; break }
+            j++
+          }
+          if (closepos > 0) {
+            afterkey = substr($0, closepos + 1)
+            crel = index(afterkey, ":")
+            idx = (crel > 0) ? closepos + crel : 0
+          } else {
+            idx = 0
+          }
+        } else {
+          idx = index($0, ":")
+        }
         if (idx > 0) {
           k = substr($0, 1, idx - 1)
           bare = k
@@ -128,23 +177,50 @@ nja_yaml_set_version() {
             match(rest, /^[[:space:]]*/); gap = substr(rest, 1, RLENGTH)
             val = substr(rest, RLENGTH + 1)
             trail = ""
-            if (match(val, /[[:space:]]*#.*$/)) {
+            # A "#" only starts a comment when preceded by whitespace (or
+            # at the very start of the value) — a bare "#" glued to the
+            # value, e.g. github:lovell/sharp#v0.35.3, is part of the value.
+            if (match(val, /(^|[[:space:]])#.*$/)) {
               trail = substr(val, RSTART)
               val = substr(val, 1, RSTART - 1)
             }
-            q = ""
-            if (substr(val, 1, 1) == "\047" || substr(val, 1, 1) == "\"") q = substr(val, 1, 1)
-            printf "%s:%s%s%s%s%s\n", k, gap, q, new, q, trail
-            done = 1
-            next
+            valtrim = val
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", valtrim)
+            # An empty value means this is a nested-map header (e.g.
+            # `react:` with indented children below), not a scalar entry.
+            # nja_yaml_entries already refuses to treat these as real
+            # entries (see its "k == \"\" || v == \"\"" guard); the writer
+            # must be at least as strict, or it clobbers the header and
+            # orphans the child lines.
+            if (valtrim != "") {
+              q = ""
+              if (substr(val, 1, 1) == "\047" || substr(val, 1, 1) == "\"") q = substr(val, 1, 1)
+              printf "%s:%s%s%s%s%s\n", k, gap, q, new, q, trail
+              done = 1
+              matched = 1
+            }
           }
         }
       }
-      print
+      if (!matched) print
     }
     END { exit(done ? 0 : 1) }
   ' "$file" > "$tmp"
   local code=$?
-  if [ "$code" -ne 0 ]; then rm -f "$tmp"; return 1; fi
-  mv "$tmp" "$file"
+
+  if [ "$code" -eq 1 ]; then
+    rc=1
+  elif [ "$code" -ne 0 ]; then
+    rc=2
+  elif [ ! -s "$tmp" ] && [ -s "$file" ]; then
+    rc=2
+  elif mv "$tmp" "$file"; then
+    rc=0
+  else
+    rc=2
+  fi
+
+  [ "$rc" -ne 0 ] && rm -f "$tmp"
+  trap - INT TERM HUP
+  return "$rc"
 }

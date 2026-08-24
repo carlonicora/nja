@@ -84,3 +84,74 @@ t_assert_contains "$(cat "$yaml")" "react: 'catalog:'" "writer does not touch re
 t_assert_exit 1 "writer fails on an unknown key" -- nja_yaml_set_version "$yaml" catalog nope 1.0.0
 
 rm -rf "$repo"
+
+# ── fix round 1: regressions found by adversarial review ────────────────────
+
+# 1. a "#" glued to a value (no preceding whitespace) is part of the value,
+#    not a comment — it must not be split off and re-appended after the
+#    new version.
+repo="$(t_mkrepo)"
+yaml="$repo/pnpm-workspace.yaml"
+cat >> "$yaml" <<'YAML'
+
+hashvals:
+  sharp: github:lovell/sharp#v0.35.3
+YAML
+nja_yaml_set_version "$yaml" hashvals sharp "0.36.0"
+after="$(cat "$yaml")"
+t_assert_contains "$after" "sharp: 0.36.0" "writer replaces a value containing an unspaced #"
+t_assert_not_contains "$after" "0.36.0#v0.35.3" "writer does not reattach the unspaced # as a stray comment"
+rm -rf "$repo"
+
+# 2. a quoted key containing a colon must not be mistaken for the key/value
+#    separator — a later plain key with the same bare name must still be
+#    found, and the colon-bearing key must be left untouched.
+repo="$(t_mkrepo)"
+yaml2="$repo/colon-key.yaml"
+cat > "$yaml2" <<'YAML'
+catalog:
+  'react:native': 0.1.0
+  react: 19.2.8
+YAML
+nja_yaml_set_version "$yaml2" catalog react "19.9.9"
+after="$(cat "$yaml2")"
+t_assert_contains "$after" "react: 19.9.9" "writer updates the plain key past a colon-bearing quoted key"
+t_assert_contains "$after" "'react:native': 0.1.0" "writer leaves the colon-bearing quoted key untouched"
+rm -rf "$repo"
+
+# 3. a key that only appears as a nested-map header (no inline scalar value)
+#    must not be treated as a match — the header and its indented children
+#    must survive untouched, and the call must report "not found" (1), the
+#    same contract nja_yaml_entries already enforces on read.
+repo="$(t_mkrepo)"
+yaml3="$repo/nested.yaml"
+cat > "$yaml3" <<'YAML'
+catalog:
+  react:
+    version: 19.2.8
+YAML
+before="$(cat "$yaml3")"
+t_assert_exit 1 "writer does not match a nested-map header with no scalar value" -- nja_yaml_set_version "$yaml3" catalog react "19.9.9"
+t_assert_eq "$before" "$(cat "$yaml3")" "writer leaves the nested map (header and child) byte-identical"
+rm -rf "$repo"
+
+# 4. exit codes must distinguish "key not found in block" (1, benign) from a
+#    hard failure (2) — a missing file or an unwritable directory must not
+#    be silently reported as "not found".
+repo="$(t_mkrepo)"
+yaml="$repo/pnpm-workspace.yaml"
+before="$(cat "$yaml")"
+t_assert_exit 1 "unknown key still returns 1 (soft, not a hard failure)" -- nja_yaml_set_version "$yaml" catalog nope 1.0.0
+t_assert_eq "$before" "$(cat "$yaml")" "the not-found (1) path leaves the file byte-identical"
+t_assert_eq "0" "$(find "$repo" -name '*.nja.tmp' | wc -l | tr -d ' ')" "the not-found (1) path leaves no stray temp file"
+
+t_assert_exit 2 "writer returns 2 (hard failure) for a missing file" -- nja_yaml_set_version "$repo/does-not-exist.yaml" catalog eslint "1.0.0"
+t_assert_eq "0" "$(find "$repo" -name '*.nja.tmp' | wc -l | tr -d ' ')" "the missing-file (2) path leaves no stray temp file"
+
+chmod 555 "$repo"
+t_assert_exit 2 "writer returns 2 (hard failure) for an unwritable directory" -- nja_yaml_set_version "$yaml" catalog eslint "1.0.0"
+chmod 755 "$repo"
+t_assert_eq "$before" "$(cat "$yaml")" "the unwritable-directory (2) path leaves the file byte-identical"
+t_assert_eq "0" "$(find "$repo" -name '*.nja.tmp' | wc -l | tr -d ' ')" "the unwritable-directory (2) path leaves no stray temp file"
+
+rm -rf "$repo"
