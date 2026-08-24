@@ -19,12 +19,8 @@ nja_fail() { printf '  ✖ %s\n' "$*" >&2; }
 # nja_resolve_root [path] — the repo root, or the given path if not a git repo.
 nja_resolve_root() {
   local p="${1:-$PWD}"
-  local result
   if git -C "$p" rev-parse --show-toplevel >/dev/null 2>&1; then
-    result="$(git -C "$p" rev-parse --show-toplevel)"
-    # macOS: strip /private prefix that git adds when resolving symlinks
-    result="${result#/private}"
-    printf '%s\n' "$result"
+    git -C "$p" rev-parse --show-toplevel
   else
     (cd "$p" && pwd)
   fi

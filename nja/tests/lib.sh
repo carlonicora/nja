@@ -49,7 +49,7 @@ t_assert_exit() {
 
 # t_mkrepo — a fresh nja-detectable fixture repo. Prints its path.
 t_mkrepo() {
-  local d; d="$(mktemp -d -t nja-fixture)"
+  local d; d="$(cd "$(mktemp -d -t nja-fixture)" && pwd -P)"
   mkdir -p "$d/apps/api" "$d/apps/web" "$d/packages/shared" "$d/packages/nestjs-neo4jsonapi"
   cat > "$d/package.json" <<'JSON'
 { "name": "fixture", "version": "1.0.0", "private": true,
