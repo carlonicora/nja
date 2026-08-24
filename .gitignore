@@ -13,3 +13,6 @@ node_modules/
 
 # Local settings
 .claude/settings.local.json
+
+# subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
