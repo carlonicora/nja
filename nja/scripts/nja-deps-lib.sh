@@ -102,3 +102,49 @@ nja_yaml_entries() {
     }
   ' "$1"
 }
+
+# nja_yaml_set_version <file> <block> <key> <new-version>
+# The ONLY writer of pnpm-workspace.yaml. Substitutes the version token and
+# nothing else — indentation, quoting, trailing comments and every other line
+# survive byte-for-byte. These files carry incident commentary that is worth
+# more than the versions; a reformatting write would be a regression.
+nja_yaml_set_version() {
+  local file="$1" block="$2" key="$3" new="$4"
+  local tmp="$file.nja.tmp"
+  awk -v want="$block" -v key="$key" -v new="$new" '
+    BEGIN { inb = 0; done = 0 }
+    index($0, want ":") == 1 { inb = 1; print; next }
+    inb && /^[^[:space:]#]/  { inb = 0 }
+    {
+      if (inb && !done && $0 !~ /^[[:space:]]*#/) {
+        idx = index($0, ":")
+        if (idx > 0) {
+          k = substr($0, 1, idx - 1)
+          bare = k
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", bare)
+          gsub(/^['"'"'"]+|['"'"'"]+$/, "", bare)
+          if (bare == key) {
+            rest = substr($0, idx + 1)
+            match(rest, /^[[:space:]]*/); gap = substr(rest, 1, RLENGTH)
+            val = substr(rest, RLENGTH + 1)
+            trail = ""
+            if (match(val, /[[:space:]]*#.*$/)) {
+              trail = substr(val, RSTART)
+              val = substr(val, 1, RSTART - 1)
+            }
+            q = ""
+            if (substr(val, 1, 1) == "\047" || substr(val, 1, 1) == "\"") q = substr(val, 1, 1)
+            printf "%s:%s%s%s%s%s\n", k, gap, q, new, q, trail
+            done = 1
+            next
+          }
+        }
+      }
+      print
+    }
+    END { exit(done ? 0 : 1) }
+  ' "$file" > "$tmp"
+  local code=$?
+  if [ "$code" -ne 0 ]; then rm -f "$tmp"; return 1; fi
+  mv "$tmp" "$file"
+}

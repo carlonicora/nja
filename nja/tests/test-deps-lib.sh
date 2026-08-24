@@ -51,3 +51,36 @@ t_assert_contains "$ovr" "$(printf 'bullmq\t6.0.2')" "overrides: exact pin"
 t_assert_contains "$ovr" "$(printf 'react\tcatalog:')" "overrides: catalog reference retained verbatim"
 
 rm -rf "$repo"
+
+repo="$(t_mkrepo)"
+yaml="$repo/pnpm-workspace.yaml"
+before="$(cat "$yaml")"
+
+nja_yaml_set_version "$yaml" catalog eslint "^9.40.0"
+after="$(cat "$yaml")"
+
+t_assert_contains "$after" "eslint: ^9.40.0" "writer updates the plain catalog entry"
+t_assert_contains "$after" "# nestjs peer floors" "writer preserves in-block comments"
+t_assert_contains "$after" "# Single source of truth for shared versions." "writer preserves pre-block comments"
+t_assert_contains "$after" "verifyDepsBeforeRun: warn" "writer preserves later top-level keys"
+
+# exactly one line changed
+changed="$(diff <(printf '%s\n' "$before") <(printf '%s\n' "$after") | grep -c '^[<>]')"
+t_assert_eq "2" "$changed" "writer changes exactly one line (one < and one >)"
+
+# quoted keys and quoted values keep their quoting
+nja_yaml_set_version "$yaml" catalog "@typescript-eslint/parser" "^8.70.0"
+t_assert_contains "$(cat "$yaml")" "'@typescript-eslint/parser': ^8.70.0" "writer preserves key quoting"
+
+nja_yaml_set_version "$yaml" overrides bullmq "6.1.0"
+t_assert_contains "$(cat "$yaml")" "bullmq: 6.1.0" "writer scopes to the named block"
+t_assert_contains "$(cat "$yaml")" "react: 'catalog:'" "writer leaves catalog references alone"
+
+# same key in two blocks: only the named block is touched
+nja_yaml_set_version "$yaml" catalog react "19.3.0"
+t_assert_contains "$(cat "$yaml")" "react: 19.3.0" "writer updates react in catalog"
+t_assert_contains "$(cat "$yaml")" "react: 'catalog:'" "writer does not touch react in overrides"
+
+t_assert_exit 1 "writer fails on an unknown key" -- nja_yaml_set_version "$yaml" catalog nope 1.0.0
+
+rm -rf "$repo"
