@@ -180,7 +180,13 @@ nja_yaml_set_version() {
             # A "#" only starts a comment when preceded by whitespace (or
             # at the very start of the value) — a bare "#" glued to the
             # value, e.g. github:lovell/sharp#v0.35.3, is part of the value.
-            if (match(val, /(^|[[:space:]])#.*$/)) {
+            # The "+" matters: the WHOLE contiguous whitespace run before
+            # the "#" belongs to the preserved trailing comment, not to
+            # the value — a single [[:space:]] here would peel off only
+            # the one space adjacent to "#" and leave the rest of an
+            # alignment gap glued to (and therefore discarded with) the
+            # value, collapsing "6.0.2   # note" to "6.1.0 # note".
+            if (match(val, /(^|[[:space:]]+)#.*$/)) {
               trail = substr(val, RSTART)
               val = substr(val, 1, RSTART - 1)
             }

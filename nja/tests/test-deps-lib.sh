@@ -87,9 +87,9 @@ rm -rf "$repo"
 
 # ── fix round 1: regressions found by adversarial review ────────────────────
 
-# 1. a "#" glued to a value (no preceding whitespace) is part of the value,
-#    not a comment — it must not be split off and re-appended after the
-#    new version.
+# 1a. a "#" glued to a value (no preceding whitespace) is part of the value,
+#     not a comment — it must not be split off and re-appended after the
+#     new version.
 repo="$(t_mkrepo)"
 yaml="$repo/pnpm-workspace.yaml"
 cat >> "$yaml" <<'YAML'
@@ -98,9 +98,40 @@ hashvals:
   sharp: github:lovell/sharp#v0.35.3
 YAML
 nja_yaml_set_version "$yaml" hashvals sharp "0.36.0"
-after="$(cat "$yaml")"
-t_assert_contains "$after" "sharp: 0.36.0" "writer replaces a value containing an unspaced #"
-t_assert_not_contains "$after" "0.36.0#v0.35.3" "writer does not reattach the unspaced # as a stray comment"
+line="$(grep '^  sharp:' "$yaml")"
+t_assert_eq "  sharp: 0.36.0" "$line" "writer replaces a value containing an unspaced # (glued # is part of the value)"
+rm -rf "$repo"
+
+# 1b. fix round 2 regression: a multi-space alignment gap before a trailing
+#     comment must be preserved byte-for-byte. The finding-1 fix's first
+#     attempt used a single [[:space:]] before "#", which peeled off only
+#     the one space adjacent to "#" and discarded the rest of the gap along
+#     with the old value — collapsing "6.0.2   # note" to "6.1.0 # note".
+#     Assert the exact resulting line, not just that a comment exists.
+repo="$(t_mkrepo)"
+yaml="$repo/pnpm-workspace.yaml"
+cat >> "$yaml" <<'YAML'
+
+gapvals:
+  gapkey: 6.0.2   # pinned, see incident
+YAML
+nja_yaml_set_version "$yaml" gapvals gapkey "6.1.0"
+line="$(grep '^  gapkey:' "$yaml")"
+t_assert_eq "  gapkey: 6.1.0   # pinned, see incident" "$line" "writer preserves a multi-space gap before a trailing comment exactly"
+rm -rf "$repo"
+
+# 1c. a single-space gap before a trailing comment (the common case) must
+#     also be preserved exactly.
+repo="$(t_mkrepo)"
+yaml="$repo/pnpm-workspace.yaml"
+cat >> "$yaml" <<'YAML'
+
+gapvals:
+  gapkey: 6.0.2 # pinned, see incident
+YAML
+nja_yaml_set_version "$yaml" gapvals gapkey "6.1.0"
+line="$(grep '^  gapkey:' "$yaml")"
+t_assert_eq "  gapkey: 6.1.0 # pinned, see incident" "$line" "writer preserves a single-space gap before a trailing comment exactly"
 rm -rf "$repo"
 
 # 2. a quoted key containing a colon must not be mistaken for the key/value
