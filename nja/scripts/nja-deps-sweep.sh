@@ -115,15 +115,194 @@ $(nja_workspaces "$root")
 EOF
 }
 
+# ── version resolution ───────────────────────────────────────────────────────
+# Latest published version of a package. NJA_LATEST_STUB makes this hermetic
+# for tests: a "pkg<TAB>version" file consulted instead of the registry.
+latest_version() {
+  local pkg="$1"
+  if [ -n "${NJA_LATEST_STUB:-}" ] && [ -f "$NJA_LATEST_STUB" ]; then
+    awk -F'\t' -v p="$pkg" '$1 == p { print $2; found = 1; exit } END { exit(found ? 0 : 1) }' \
+      "$NJA_LATEST_STUB"
+    return $?
+  fi
+  pnpm view "$pkg" version 2>/dev/null | tail -1
+}
+
+is_rejected() {
+  local pkg="$1" list="$2" item
+  [ -n "$list" ] || return 1
+  local IFS=','
+  for item in $list; do [ "$item" = "$pkg" ] && return 0; done
+  return 1
+}
+
+# Re-apply the range operator the entry already used: ^9.39.5 -> ^9.44.0,
+# a pinned 19.2.8 -> 19.4.0, >=13.15.20 -> >=13.16.0.
+reranged() {
+  local current="$1" latest="$2" op
+  case "$current" in
+    \^*) op="^" ;; \~*) op="~" ;; ">="*) op=">=" ;; *) op="" ;;
+  esac
+  printf '%s%s\n' "$op" "$latest"
+}
+
+# numeric-only major.minor.patch comparison; prints -1, 0 or 1
+semver_cmp() {
+  node -e '
+    const norm = (s) => (String(s).match(/(\d+)\.(\d+)\.(\d+)/) || []).slice(1).map(Number);
+    const a = norm(process.argv[1]), b = norm(process.argv[2]);
+    if (!a.length || !b.length) { console.log(0); process.exit(0); }
+    for (let i = 0; i < 3; i++) if (a[i] !== b[i]) { console.log(a[i] > b[i] ? 1 : -1); process.exit(0); }
+    console.log(0);
+  ' "$1" "$2"
+}
+
+# Write a version into pnpm-workspace.yaml and translate nja_yaml_set_version's
+# three-way contract into this function's own return code:
+#   0  written, or nothing to write (apply=0)
+#   1  the key vanished between read and write — a logic error, since every
+#      caller only writes keys it just read out of the same block. Surfaced,
+#      never swallowed.
+#   2  hard failure (awk/mv/write error) — fatal, reported with package+file.
+# Callers must stop the surface immediately on a non-zero return; a silent
+# write failure across six repos while the sweep reports success is exactly
+# the outcome this project exists to prevent.
+write_yaml_version() {
+  local yaml="$1" block="$2" pkg="$3" new="$4"
+  local wrc
+  nja_yaml_set_version "$yaml" "$block" "$pkg" "$new"
+  wrc=$?
+  case "$wrc" in
+    0) return 0 ;;
+    1)
+      nja_fail "$block: $pkg vanished from $yaml between read and write — logic error, not writing"
+      return 1
+      ;;
+    *)
+      nja_fail "$block: failed to write $pkg -> $new in $yaml (nja_yaml_set_version exit $wrc)"
+      return 2
+      ;;
+  esac
+}
+
+# ── surface 2: catalog ───────────────────────────────────────────────────────
+sweep_catalog() {
+  local root="$1" reject="$2" apply="$3"
+  local yaml="$root/pnpm-workspace.yaml" pkg cur lat new wrc
+  while IFS=$'\t' read -r pkg cur; do
+    [ -n "$pkg" ] || continue
+    is_rejected "$pkg" "$reject" && continue
+    case "$cur" in catalog:*) continue ;; esac
+    lat="$(latest_version "$pkg")" || continue
+    [ -n "$lat" ] || continue
+    new="$(reranged "$cur" "$lat")"
+    [ "$new" = "$cur" ] && continue
+    printf 'catalog\tpnpm-workspace.yaml\t%s\t%s\t%s\n' "$pkg" "$cur" "$new"
+    if [ "$apply" -eq 1 ]; then
+      write_yaml_version "$yaml" catalog "$pkg" "$new"
+      wrc=$?
+      [ "$wrc" -ne 0 ] && return "$wrc"
+    fi
+  done <<EOF
+$(nja_yaml_entries "$yaml" catalog)
+EOF
+}
+
+# ── surface 3: overrides ─────────────────────────────────────────────────────
+# Highest declared range for a package across every workspace manifest.
+declared_floor() {
+  local root="$1" pkg="$2" ws manifest best="" r
+  while IFS= read -r ws; do
+    manifest="$root/$ws/package.json"
+    [ "$ws" = "." ] && manifest="$root/package.json"
+    [ -f "$manifest" ] || continue
+    r="$(PKG="$pkg" node -e '
+      const p = require(process.argv[1]);
+      const v = (p.dependencies||{})[process.env.PKG] ?? (p.devDependencies||{})[process.env.PKG];
+      if (v && !/^(workspace|catalog|npm):/.test(v)) console.log(v);
+    ' "$manifest" 2>/dev/null)"
+    [ -n "$r" ] || continue
+    if [ -z "$best" ] || [ "$(semver_cmp "$r" "$best")" = "1" ]; then best="$r"; fi
+  done <<EOF
+$(nja_workspaces "$root")
+EOF
+  printf '%s\n' "$best"
+}
+
+sweep_overrides() {
+  local root="$1" reject="$2" apply="$3"
+  local yaml="$root/pnpm-workspace.yaml" pkg cur lat new floor wrc
+  while IFS=$'\t' read -r pkg cur; do
+    [ -n "$pkg" ] || continue
+    is_rejected "$pkg" "$reject" && continue
+    case "$cur" in catalog:*) continue ;; esac
+    lat="$(latest_version "$pkg")" || continue
+    [ -n "$lat" ] || continue
+    new="$(reranged "$cur" "$lat")"
+    [ "$new" = "$cur" ] && continue
+
+    floor="$(declared_floor "$root" "$pkg")"
+    if [ -n "$floor" ] && [ "$(semver_cmp "$new" "$floor")" = "-1" ]; then
+      nja_fail "override $pkg: $new would sit below the declared floor $floor — refusing"
+      nja_say "        an override REPLACES declared ranges; a low one resolves under the floor silently."
+      return 3
+    fi
+
+    printf 'overrides\tpnpm-workspace.yaml\t%s\t%s\t%s\n' "$pkg" "$cur" "$new"
+    if [ "$apply" -eq 1 ]; then
+      write_yaml_version "$yaml" overrides "$pkg" "$new"
+      wrc=$?
+      [ "$wrc" -ne 0 ] && return "$wrc"
+    fi
+  done <<EOF
+$(nja_yaml_entries "$yaml" overrides)
+EOF
+}
+
 # ── report ───────────────────────────────────────────────────────────────────
-rows="$(sweep_manifests "$ROOT" "$REJECT" "$APPLY")"
+# Rows are always collected from a DRY pass first: with --apply, ncu -u and the
+# yaml writer have already rewritten the source, so a post-write read would
+# report the new value in the FROM column.
+rows="$(sweep_manifests "$ROOT" "$REJECT" 0)"
+rows="$rows
+$(sweep_catalog "$ROOT" "$REJECT" 0)"
+cat_code=$?
+if [ "$cat_code" -ne 0 ]; then exit 1; fi
+
+ovr="$(sweep_overrides "$ROOT" "$REJECT" 0)"
+ovr_code=$?
+if [ "$ovr_code" -eq 3 ]; then exit 3; fi
+if [ "$ovr_code" -ne 0 ]; then exit 1; fi
+rows="$rows
+$ovr"
+
+rows="$(printf '%s\n' "$rows" | grep -v '^[[:space:]]*$' | awk '!seen[$0]++')"
 
 if [ -z "$rows" ]; then
-  nja_ok "no manifest updates available"
+  nja_ok "everything is already up to date on all three surfaces"
 else
   nja_say ""
   nja_say "SURFACE    LOCATION                        PACKAGE                         FROM            TO"
   printf '%s\n' "$rows" | awk -F'\t' '{ printf "%-10s %-31s %-31s %-15s %s\n", $1, $2, $3, $4, $5 }'
+  nja_say ""
+  nja_say "$(printf '%s\n' "$rows" | wc -l | tr -d ' ') update(s) available"
+fi
+
+if [ "$APPLY" -eq 1 ]; then
+  sweep_manifests "$ROOT" "$REJECT" 1 >/dev/null
+
+  sweep_catalog "$ROOT" "$REJECT" 1 >/dev/null
+  cat_code=$?
+  if [ "$cat_code" -ne 0 ]; then exit 1; fi
+
+  sweep_overrides "$ROOT" "$REJECT" 1 >/dev/null
+  ovr_code=$?
+  if [ "$ovr_code" -eq 3 ]; then exit 3; fi
+  if [ "$ovr_code" -ne 0 ]; then exit 1; fi
+
+  nja_say ""
+  nja_ok "applied — now run ONE root install:"
+  nja_say "      CI=true pnpm install --no-frozen-lockfile"
 fi
 
 exit 0

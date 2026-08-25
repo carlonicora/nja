@@ -57,3 +57,59 @@ repo="$(t_mkrepo)"
 bash "$SWEEP" --root "$repo" --dry-run >/dev/null 2>&1
 t_assert_eq "" "$(git -C "$repo" status --short)" "dry-run leaves the tree clean"
 rm -rf "$repo"
+
+# NJA_LATEST_STUB=<file> makes version resolution read "pkg<TAB>version" from a
+# file instead of the network, so these tests are hermetic.
+repo="$(t_mkrepo)"
+stub="$repo/.latest"
+cat > "$stub" <<'STUB'
+eslint	9.44.0
+@typescript-eslint/parser	8.70.0
+react	19.4.0
+@nestjs/common	11.2.0
+class-validator	0.15.4
+bullmq	6.2.0
+STUB
+
+out="$(NJA_LATEST_STUB="$stub" bash "$SWEEP" --root "$repo" --dry-run 2>&1)"
+t_assert_contains "$out" "catalog" "catalog surface appears in the report"
+t_assert_contains "$out" "eslint" "catalog reports eslint"
+t_assert_contains "$out" "overrides" "overrides surface appears in the report"
+t_assert_contains "$out" "bullmq" "overrides reports bullmq"
+t_assert_not_contains "$out" "'catalog:'" "overrides skips catalog references"
+# Scoped to the dependency files (not full `git status`): the stub itself
+# lives inside $repo as an untracked ".latest" fixture file, so a full
+# status would always show it regardless of what the sweep did.
+t_assert_eq "" "$(git -C "$repo" status --short -- '*package.json' pnpm-workspace.yaml pnpm-lock.yaml)" \
+  "catalog dry-run writes nothing"
+
+# reject is honoured on every surface
+out="$(NJA_LATEST_STUB="$stub" bash "$SWEEP" --root "$repo" --dry-run --reject eslint,bullmq 2>&1)"
+# "eslint" alone would also match the unrejected "@typescript-eslint/parser"
+# row, so assert on eslint's own target version (unique among the stub).
+t_assert_not_contains "$out" "9.44.0" "reject suppresses a catalog entry"
+t_assert_not_contains "$out" "bullmq" "reject suppresses an override entry"
+
+# apply writes, preserving comments
+NJA_LATEST_STUB="$stub" bash "$SWEEP" --root "$repo" --apply >/dev/null 2>&1
+yaml="$(cat "$repo/pnpm-workspace.yaml")"
+t_assert_contains "$yaml" "eslint: ^9.44.0" "apply updates the catalog entry"
+t_assert_contains "$yaml" "# nestjs peer floors" "apply preserves comments"
+t_assert_contains "$yaml" "react: 'catalog:'" "apply leaves catalog references alone"
+rm -rf "$repo"
+
+# floor rule: an override below a declared manifest range is refused
+repo2="$(t_mkrepo)"
+printf '{ "name": "fixture-api", "version": "1.0.0", "dependencies": { "class-validator": "^0.15.9" } }\n' \
+  > "$repo2/apps/api/package.json"
+# Must differ from the fixture's current override (^0.15.1) or there is no
+# proposed update to check against the floor at all, and must sit below the
+# manifest floor declared above (^0.15.9) to actually exercise the refusal.
+cat > "$repo2/.latest" <<'STUB'
+class-validator	0.15.4
+STUB
+t_assert_exit 3 "sweep refuses to lower a declared floor" -- \
+  env NJA_LATEST_STUB="$repo2/.latest" bash "$SWEEP" --root "$repo2" --apply
+t_assert_contains "$(NJA_LATEST_STUB="$repo2/.latest" bash "$SWEEP" --root "$repo2" --apply 2>&1)" \
+  "class-validator" "the refusal names the package"
+rm -rf "$repo2"
