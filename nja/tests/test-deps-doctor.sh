@@ -90,3 +90,114 @@ ln -s "../../../node_modules/.pnpm/zod@4.4.3/node_modules/zod" "$repo3/apps/api/
 t_assert_exit 0 "relative symlinks at different depths to the same target are not a mismatch" \
   -- bash "$DOCTOR" --root "$repo3"
 rm -rf "$repo3"
+
+# ── fold-in fix 1: pnpm-workspace.yaml absent must never yield a false
+# "all workspace links agree" — the link check itself must be visibly skipped.
+repo4="$(t_mkrepo)"
+rm -f "$repo4/pnpm-workspace.yaml"
+mkdir -p "$repo4/node_modules/.pnpm/react@19.2.8/node_modules/react" "$repo4/apps/web/node_modules"
+ln -s "$repo4/node_modules/.pnpm/react@19.2.8/node_modules/react" "$repo4/apps/web/node_modules/react"
+out="$(bash "$DOCTOR" --root "$repo4" 2>&1)"
+t_assert_contains "$out" "link check skipped" \
+  "doctor warns instead of staying silent when pnpm-workspace.yaml is absent"
+t_assert_not_contains "$out" "all workspace links agree" \
+  "doctor never claims links agree when none were actually compared"
+t_assert_exit 0 "a missing pnpm-workspace.yaml is a warning, not a failure" -- bash "$DOCTOR" --root "$repo4"
+rm -rf "$repo4"
+
+# ── fold-in fix 2: full symlink-chain canonicalisation. A link that hops
+# through an intermediate symlink before reaching the real store directory
+# must resolve identically to a link pointing straight at the store — and a
+# chain that lands on a genuinely different version must still be caught.
+repo5="$(t_mkrepo)"
+mkdir -p "$repo5/node_modules/.pnpm/react@19.2.8/node_modules/react" "$repo5/apps/web/node_modules"
+ln -s ".pnpm/react@19.2.8/node_modules/react" "$repo5/node_modules/react"
+ln -s "../../node_modules/react" "$repo5/apps/web/node_modules/.react-hop"
+ln -s ".react-hop" "$repo5/apps/web/node_modules/react"
+t_assert_exit 0 "a symlink chain resolving to the same store target is not a mismatch" \
+  -- bash "$DOCTOR" --root "$repo5"
+rm -rf "$repo5"
+
+repo6="$(t_mkrepo)"
+mkdir -p "$repo6/node_modules/.pnpm/react@19.2.8/node_modules/react" \
+         "$repo6/node_modules/.pnpm/react@19.9.9/node_modules/react" \
+         "$repo6/apps/web/node_modules"
+ln -s ".pnpm/react@19.2.8/node_modules/react" "$repo6/node_modules/react"
+ln -s "../../node_modules/.pnpm/react@19.9.9/node_modules/react" "$repo6/apps/web/node_modules/.react-hop"
+ln -s ".react-hop" "$repo6/apps/web/node_modules/react"
+t_assert_exit 2 "a symlink chain landing on a genuinely different version is still caught" \
+  -- bash "$DOCTOR" --root "$repo6"
+rm -rf "$repo6"
+
+# ── fold-in fix 3: an unresolvable (dangling) link must warn, not vanish
+# silently — but must not itself fail the run.
+repo7="$(t_mkrepo)"
+mkdir -p "$repo7/node_modules/.pnpm/react@19.2.8/node_modules/react" \
+         "$repo7/apps/web/node_modules" "$repo7/apps/api/node_modules"
+ln -s ".pnpm/react@19.2.8/node_modules/react" "$repo7/node_modules/react"
+ln -s "../../node_modules/.pnpm/react@19.2.8/node_modules/react-GONE" "$repo7/apps/web/node_modules/react"
+ln -s "../../node_modules/.pnpm/react@19.2.8/node_modules/react-GONE" "$repo7/apps/api/node_modules/react"
+out="$(bash "$DOCTOR" --root "$repo7" 2>&1)"
+t_assert_contains "$out" "dangling" \
+  "doctor warns about an unresolvable/dangling link instead of staying silent about it"
+t_assert_exit 0 "a dangling link warns but does not fail the run" -- bash "$DOCTOR" --root "$repo7"
+rm -rf "$repo7"
+
+# ── fold-in fix 4: grep escaping only "+". BSD grep silently tolerated the
+# stray "\@" this used to produce; GNU grep >=3.8 would warn on stderr. Also
+# re-confirm the prefix-conflation protection this escaping sits inside of.
+repo8="$(t_mkrepo)"
+mkdir -p "$repo8/node_modules/.pnpm/@nestjs+core@11.1.28/node_modules/@nestjs/core" \
+         "$repo8/node_modules/.pnpm/@nestjs+core-extra@9.9.9/node_modules/@nestjs/core-extra"
+out="$(bash "$DOCTOR" --root "$repo8" 2>&1)"
+t_assert_not_contains "$out" "stray" "grep escaping change does not emit a stray-backslash warning"
+t_assert_exit 0 "a package sharing a name prefix (@nestjs/core-extra) is not conflated with @nestjs/core" \
+  -- bash "$DOCTOR" --root "$repo8"
+rm -rf "$repo8"
+
+# ── delegated repo scripts + report-only published-version drift ───────────
+repo="$(t_mkrepo)"
+mkdir -p "$repo/node_modules/.pnpm" "$repo/scripts"
+
+# a failing delegated script propagates as exit 1
+cat > "$repo/scripts/check-dep-drift.js" <<'JS'
+console.error("✖ dependency drift check failed (1):\n  - synthetic");
+process.exit(1);
+JS
+t_assert_exit 1 "doctor exits 1 when a delegated script fails" -- bash "$DOCTOR" --root "$repo"
+t_assert_contains "$(bash "$DOCTOR" --root "$repo" 2>&1)" "synthetic" \
+  "doctor surfaces the delegated script's output"
+
+# a passing delegated script does not fail the run
+cat > "$repo/scripts/check-dep-drift.js" <<'JS'
+console.log("✓ dependency drift check passed");
+JS
+t_assert_exit 0 "doctor exits 0 when the delegated script passes" -- bash "$DOCTOR" --root "$repo"
+
+# published drift: submodule HEAD is past the tag for its declared version
+sub="$repo/packages/nestjs-neo4jsonapi"
+git -C "$sub" init -q 2>/dev/null || true
+printf 'x\n' > "$sub/file.txt"
+git -C "$sub" add -A >/dev/null 2>&1
+git -C "$sub" -c user.email=t@t -c user.name=t commit -qm v322 >/dev/null 2>&1
+git -C "$sub" tag v3.2.2 >/dev/null 2>&1
+printf 'y\n' >> "$sub/file.txt"
+git -C "$sub" add -A >/dev/null 2>&1
+git -C "$sub" -c user.email=t@t -c user.name=t commit -qm ahead >/dev/null 2>&1
+
+out="$(bash "$DOCTOR" --root "$repo" 2>&1)"
+t_assert_contains "$out" "ahead of its published version" "doctor warns on published drift"
+t_assert_contains "$out" "3.2.2" "the drift warning names the declared version"
+t_assert_exit 0 "published drift is report-only and does not fail" -- bash "$DOCTOR" --root "$repo"
+
+# ── precedence: a resolution problem outranks a delegated-script failure ───
+mkdir -p "$repo/node_modules/.pnpm/react@19.2.8/node_modules/react" \
+         "$repo/node_modules/.pnpm/react@19.4.0/node_modules/react"
+cat > "$repo/scripts/check-dep-drift.js" <<'JS'
+console.error("✖ dependency drift check failed (1):\n  - synthetic");
+process.exit(1);
+JS
+t_assert_exit 2 "a duplicate resolution outranks a failing delegated script (exit 2, not 1)" \
+  -- bash "$DOCTOR" --root "$repo"
+
+rm -rf "$repo"
