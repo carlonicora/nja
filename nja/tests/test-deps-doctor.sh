@@ -112,20 +112,34 @@ rm -rf "$repo4"
 repo5="$(t_mkrepo)"
 mkdir -p "$repo5/node_modules/.pnpm/react@19.2.8/node_modules/react" "$repo5/apps/web/node_modules"
 ln -s ".pnpm/react@19.2.8/node_modules/react" "$repo5/node_modules/react"
-ln -s "../../node_modules/react" "$repo5/apps/web/node_modules/.react-hop"
+# apps/web/node_modules/ is 3 levels below repo root — ../../../ , matching the
+# depth the pre-existing repo3/zod fixture above (and the script's own
+# resolve_link_target comment) already document. ../../ (2 levels) would land
+# on a nonexistent apps/node_modules/react and make this link DANGLE instead
+# of chaining — silently exercising fold-in fix 3's dangling-link branch
+# instead of the chain-resolution path this test exists to cover.
+ln -s "../../../node_modules/react" "$repo5/apps/web/node_modules/.react-hop"
 ln -s ".react-hop" "$repo5/apps/web/node_modules/react"
 t_assert_exit 0 "a symlink chain resolving to the same store target is not a mismatch" \
   -- bash "$DOCTOR" --root "$repo5"
 rm -rf "$repo5"
 
+# Same-version, different-fingerprint pnpm store entries: check_single_resolution
+# dedups by version number after stripping the "_..." peer-fingerprint suffix,
+# so these two directories collapse to ONE version and do not themselves
+# fail that check — the only way this fixture can exit 2 is via
+# check_readlink_pairs actually resolving the two (chained) links to two
+# different real directories. This isolates the chain-resolution behaviour
+# from the unrelated store-duplication scan.
 repo6="$(t_mkrepo)"
 mkdir -p "$repo6/node_modules/.pnpm/react@19.2.8/node_modules/react" \
-         "$repo6/node_modules/.pnpm/react@19.9.9/node_modules/react" \
+         "$repo6/node_modules/.pnpm/react@19.2.8_react-dom@19.2.8/node_modules/react" \
          "$repo6/apps/web/node_modules"
 ln -s ".pnpm/react@19.2.8/node_modules/react" "$repo6/node_modules/react"
-ln -s "../../node_modules/.pnpm/react@19.9.9/node_modules/react" "$repo6/apps/web/node_modules/.react-hop"
+ln -s "../../../node_modules/.pnpm/react@19.2.8_react-dom@19.2.8/node_modules/react" \
+  "$repo6/apps/web/node_modules/.react-hop"
 ln -s ".react-hop" "$repo6/apps/web/node_modules/react"
-t_assert_exit 2 "a symlink chain landing on a genuinely different version is still caught" \
+t_assert_exit 2 "a symlink chain landing on a same-version, different-fingerprint copy is still caught" \
   -- bash "$DOCTOR" --root "$repo6"
 rm -rf "$repo6"
 
