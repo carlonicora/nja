@@ -73,7 +73,11 @@ _ndb_bounded_exit() {
 # the group it launched, since SIGKILL on the wrapper skips its EXIT trap).
 _ndb_reap_group() {
   local pgid="$1"
-  [ -n "$pgid" ] || return 0
+  # Same structural guard as teardown() in nja-dev-boot.sh: reject empty,
+  # non-numeric, and exactly "1" before ever signalling, not just "non-empty".
+  case "$pgid" in
+    ''|*[!0-9]*|1) return 0 ;;
+  esac
   kill -TERM -- "-$pgid" 2>/dev/null
   local w=0
   while [ -n "$(ps -o pid= -g "$pgid" 2>/dev/null)" ] && [ "$w" -lt 50 ]; do
@@ -369,6 +373,21 @@ t_assert_not_contains "$_ndb_src" "ps -ef" "dev-boot never lists all processes v
 t_assert_not_contains "$_ndb_src" "ps -A" "dev-boot never lists all processes via ps -A (a ps|grep|kill precursor)"
 t_assert_not_contains "$_ndb_src" "ps -ax" "dev-boot never lists all processes via ps -ax (a ps|grep|kill precursor)"
 
+# Review round 1: the four literal-substring guards above miss any other
+# `ps` invocation (e.g. `ps -o ... -u <uid>` or `ps -o ... -p <pid-list>`)
+# once it's piped into a filter that could then feed a kill — exactly the
+# shape a real pattern-killing teardown took during review, and it passed
+# all seven guards that existed at the time. This scans the actual script
+# file (not just the concatenated source string) for `ps` followed by a
+# pipe into grep/awk/xargs, which the legitimate `ps -o pid= -g "$PGID"`
+# idiom used throughout this script never does (it's never piped anywhere).
+if grep -nE 'ps[^|]*\|[[:space:]]*(grep|awk|xargs)' "$_ndb_boot" >/dev/null 2>&1; then
+  t_fail "dev-boot never pipes ps output into grep/awk/xargs (a pattern-kill precursor)" \
+    "$(grep -nE 'ps[^|]*\|[[:space:]]*(grep|awk|xargs)' "$_ndb_boot")"
+else
+  t_pass "dev-boot never pipes ps output into grep/awk/xargs (a pattern-kill precursor)"
+fi
+
 # ── Task 10: readiness discrimination, fatal patterns, exit codes ───────────
 #
 # _ndb_squat <port> <label> — binds a port in the background with python3,
@@ -479,6 +498,67 @@ fi
 [ -n "$_ndb_last_log" ] && rm -f "$_ndb_last_log"
 rm -f "$_ndb_boot_out7"
 rm -rf "$_ndb_repo7"
+
+# ── regression: readiness must still be detected past the pipe-buffer size ──
+# Review round 1 found that saw_api()/saw_worker() ended their pipeline in
+# `grep -q`, which under `pipefail` false-negatives once an upstream stage
+# is still mid-write to a pipe holding more than the kernel's pipe buffer
+# (~16KB on this platform) when the match is found and the reader closes
+# early (SIGPIPE on the writer, which pipefail then reports as the
+# pipeline's status). dev-biglog.sh reproduces the shape that triggers it:
+# ready lines first, then ~1.4MB of turbo-shaped (":dev:"-prefixed)
+# trailing chatter — exactly what a real web compile does after api's own
+# ready line has already landed in the log.
+_ndb_repo13="$(t_mkrepo)"
+_ndb_boot_out13="$(mktemp -t nja-boot-out)"
+_ndb_boot_bounded "$_ndb_boot_out13" 300 -- \
+  env API_PORT=13970 PORT=13971 NJA_DEV_CMD="bash $_ndb_fix/dev-biglog.sh" \
+  bash "$_ndb_boot" --root "$_ndb_repo13" --timeout 30
+
+t_assert_eq "0" "$_ndb_last_code" "readiness is detected past the pipe-buffer size (large log)"
+_ndb_out13="$(cat "$_ndb_boot_out13" 2>/dev/null)"
+t_assert_contains "$_ndb_out13" "api ready" "large-log boot reports api ready"
+t_assert_contains "$_ndb_out13" "web ready" "large-log boot reports web ready"
+t_assert_contains "$_ndb_out13" "worker ready" "large-log boot reports worker ready"
+
+if lsof -ti :13970 -sTCP:LISTEN >/dev/null 2>&1 || lsof -ti :13971 -sTCP:LISTEN >/dev/null 2>&1; then
+  t_fail "ports free after the large-log boot" "a port is still bound"
+else
+  t_pass "ports free after the large-log boot"
+fi
+
+[ -n "$_ndb_last_log" ] && rm -f "$_ndb_last_log"
+rm -f "$_ndb_boot_out13"
+rm -rf "$_ndb_repo13"
+
+# ── an unmatched worker regex must degrade to WARN quickly, not silently ────
+# burn the rest of --timeout. Review round 1: with api+web ready at ~5s,
+# an unmatched worker pattern used to keep the poll loop alive until the
+# full --timeout — indistinguishable from a hang at the 180s default.
+# NJA_READY_WORKER is deliberately set to a pattern dev-ok.sh's log can
+# never contain, forcing the grace-timeout path.
+_ndb_repo14="$(t_mkrepo)"
+_ndb_boot_out14="$(mktemp -t nja-boot-out)"
+_ndb_start14=$SECONDS
+_ndb_boot_bounded "$_ndb_boot_out14" 300 -- \
+  env API_PORT=13972 PORT=13973 NJA_DEV_CMD="bash $_ndb_fix/dev-ok.sh" \
+  NJA_READY_WORKER='THIS_PATTERN_WILL_NEVER_APPEAR_XYZ' \
+  bash "$_ndb_boot" --root "$_ndb_repo14" --timeout 30
+_ndb_elapsed14=$((SECONDS - _ndb_start14))
+
+t_assert_eq "0" "$_ndb_last_code" "an unmatched worker signal still exits 0 (PASS+WARN, not a failure)"
+t_assert_contains "$(cat "$_ndb_boot_out14" 2>/dev/null)" "worker readiness signal never matched" \
+  "an unmatched worker signal prints its WARN"
+if [ "$_ndb_elapsed14" -lt 25 ]; then
+  t_pass "an unmatched worker signal degrades to WARN well inside --timeout, not after it"
+else
+  t_fail "an unmatched worker signal degrades to WARN well inside --timeout, not after it" \
+    "took ${_ndb_elapsed14}s of a 30s timeout — looks like it waited out the full budget"
+fi
+
+[ -n "$_ndb_last_log" ] && rm -f "$_ndb_last_log"
+rm -f "$_ndb_boot_out14"
+rm -rf "$_ndb_repo14"
 
 # ── timeout: a stack that never becomes ready still tears down and exits 2 ──
 _ndb_repo8="$(t_mkrepo)"

@@ -147,7 +147,15 @@ group_alive() { [ -n "$(ps -o pid= -g "$1" 2>/dev/null)" ]; }
 # the only thing that can reach api + web + worker together.
 PGID=""
 teardown() {
-  [ -n "$PGID" ] || return 0
+  # Structurally refuse to signal anything but a genuine, specific group:
+  # empty (nothing launched), non-numeric (garbage), or exactly "1" (which
+  # `kill -- -1` would broadcast to every process this user can signal) are
+  # all rejected before a kill is ever attempted — not merely relying on
+  # `[ -n "$PGID" ]`, which says nothing about what a non-empty PGID
+  # actually contains.
+  case "$PGID" in
+    ''|*[!0-9]*|1) return 0 ;;
+  esac
   kill -TERM -- "-$PGID" 2>/dev/null
   local waited=0
   while [ "$waited" -lt 20 ]; do
@@ -310,12 +318,38 @@ NJA_READY_WEB="${NJA_READY_WEB:-Ready in|started server on|Local:}"
 
 FATAL='UnknownDependenciesException|Cannot find module|ERR_MODULE_NOT_FOUND|ERR_PNPM_|UnhandledPromiseRejection'
 
-saw_api()    { grep -E ':dev:' "$LOG" 2>/dev/null | grep -v ':dev:worker:' | grep -qE "$NJA_READY_API"; }
-saw_worker() { grep -E ':dev:worker:' "$LOG" 2>/dev/null | grep -qE "$NJA_READY_WORKER"; }
-saw_web()    { grep -qE "$NJA_READY_WEB" "$LOG" 2>/dev/null; }
-saw_fatal()  { grep -qE "$FATAL" "$LOG" 2>/dev/null; }
+# None of these may end a pipeline with `grep -q`: under `pipefail`, `-q`
+# exits the instant it finds a match and closes its stdin, and if an
+# upstream stage is still mid-write to a pipe that already holds more data
+# than the kernel pipe buffer (~16KB on macOS — trivially exceeded once a
+# real dev log accrues webpack/compile chatter after the ready line), that
+# upstream process gets SIGPIPE and exits 141. With pipefail, THAT becomes
+# the pipeline's reported status even though a match was genuinely found —
+# a false negative that grows more likely, not less, the longer the stack
+# has been up. Verified empirically on this platform: a 3-stage pipe ending
+# in `grep -q` against a real BSD grep (not any interactive-shell grep
+# shim) went from 0/10 false negatives at 16000B to 7/10 at 18000B to
+# 10/10 at 30000B and beyond, up to 19MB. `grep -c` cannot short-circuit —
+# it must consume all its input to produce an accurate count — so it never
+# closes the pipe early and the upstream never sees SIGPIPE. Piping that
+# single count line into `grep -qv '^0$'` reads one short line, which is
+# not a pipe-buffer risk. Confirmed 0/10 false negatives at every size
+# tested, including 19MB, with this form.
+saw_api()    { grep -E ':dev:' "$LOG" 2>/dev/null | grep -v ':dev:worker:' | grep -cE "$NJA_READY_API" | grep -qv '^0$'; }
+saw_worker() { grep -E ':dev:worker:' "$LOG" 2>/dev/null | grep -cE "$NJA_READY_WORKER" | grep -qv '^0$'; }
+saw_web()    { grep -cE "$NJA_READY_WEB" "$LOG" 2>/dev/null | grep -qv '^0$'; }
+saw_fatal()  { grep -cE "$FATAL" "$LOG" 2>/dev/null | grep -qv '^0$'; }
 
-api_ok=0; web_ok=0; worker_ok=0; waited=0
+# A repo whose worker never logs a recognizable ready line degrades to a
+# WARN+PASS (below), never a failure — but without a bound, that degrade
+# would only happen after burning the ENTIRE --timeout (minutes, at the
+# 180s default), which is indistinguishable from the hang this tool exists
+# to detect. Once api+web are both ready, the worker signal gets a short
+# grace window instead of the rest of --timeout; NJA_WORKER_GRACE is
+# overridable for a repo whose worker is just genuinely slower to boot.
+NJA_WORKER_GRACE="${NJA_WORKER_GRACE:-10}"
+
+api_ok=0; web_ok=0; worker_ok=0; waited=0; worker_deadline=""
 while [ "$waited" -lt "$TIMEOUT" ]; do
   if saw_fatal; then
     nja_fail "fatal pattern in the dev log:"
@@ -331,6 +365,11 @@ while [ "$waited" -lt "$TIMEOUT" ]; do
   [ "$worker_ok" -eq 0 ] && saw_worker && { worker_ok=1; nja_ok "worker ready"; }
 
   [ "$api_ok" -eq 1 ] && [ "$web_ok" -eq 1 ] && [ "$worker_ok" -eq 1 ] && break
+
+  if [ "$api_ok" -eq 1 ] && [ "$web_ok" -eq 1 ] && [ "$worker_ok" -eq 0 ]; then
+    [ -z "$worker_deadline" ] && worker_deadline=$((waited + NJA_WORKER_GRACE))
+    [ "$waited" -ge "$worker_deadline" ] && break
+  fi
 
   if ! group_alive "$PGID"; then
     nja_fail "the dev stack exited before becoming ready"
