@@ -23,18 +23,30 @@
 #   NJA_DEV_CMD     command to launch (default: pnpm dev). Word-split.
 #   NJA_READY_API / NJA_READY_WEB / NJA_READY_WORKER   readiness regexes
 #                   (consumed by the Task 10 readiness poll loop)
-#   NJA_FORCE_TEARDOWN_FAIL   test-only: makes teardown_verified() report
-#                   failure (exit 4) even though the real teardown
-#                   succeeded, so that path can be exercised without a
-#                   process group that genuinely survives SIGKILL.
+#   NJA_FORCE_TEARDOWN_FAIL   test-only: set to exactly "1" or "true" (any
+#                   other value, including unset or "0", is a no-op) to make
+#                   teardown_verified() report failure (exit 4) even though
+#                   the real teardown succeeded, so that path can be
+#                   exercised without a process group that genuinely
+#                   survives SIGKILL. Only takes effect when a process group
+#                   was actually created — it can never reclassify a
+#                   precondition failure (no group ever launched) as
+#                   "teardown unverified".
 #
 # Exit codes:
 #   0    booted and tore down cleanly
 #   1    precondition failure (port busy, usage)
-#   2    boot failed (timeout or fatal log pattern) — arrives in Task 10
+#   2    boot failed (timeout or fatal log pattern)
 #   4    teardown unverified — SOMETHING MAY STILL BE RUNNING (wins over
 #        any other pending exit code, including 130/143 below)
 #   130/143   interrupted by SIGINT/SIGTERM — teardown still ran first
+#
+# Known limit: a SECOND Ctrl-C arriving while teardown itself is running
+# (i.e. after the first INT/TERM has already cleared its own trap via
+# `trap - INT TERM` in on_signal, below) falls through to bash's default
+# SIGINT disposition, which can abort teardown mid-flight. That exits 130
+# rather than the usual 4, and the group's fate is whatever the aborted
+# teardown left behind. Not fixed here — documented as a known gap.
 set -uo pipefail
 
 NJA_BOOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -161,13 +173,31 @@ teardown() {
 # this makes teardown_verified() REPORT failure regardless of teardown()'s
 # real outcome. teardown() itself still runs for real either way — this
 # never causes an actual stray process, only a forced diagnostic.
+#
+# The override requires an explicit "1" or "true" — NJA_FORCE_TEARDOWN_FAIL=0
+# must NOT activate it (an earlier version treated any non-empty value,
+# including "0", as truthy).
+#
+# It is also gated on a group having actually existed ($was_pgid non-empty):
+# when a precondition failure (e.g. port busy) exits before `set -m` ever
+# ran, PGID is still "" and there is nothing to tear down — forcing "exit 4,
+# teardown unverified" in that case would reclassify a precondition failure
+# and print an incoherent diagnostic (an empty pgid pasted into `ps -g `).
 teardown_verified() {
   local was_pgid="$PGID" ok=0
   teardown || ok=1
-  [ -n "${NJA_FORCE_TEARDOWN_FAIL:-}" ] && ok=1
+  if [ -n "$was_pgid" ]; then
+    case "${NJA_FORCE_TEARDOWN_FAIL:-}" in
+      1|true) ok=1 ;;
+    esac
+  fi
   if [ "$ok" -ne 0 ]; then
-    nja_fail "TEARDOWN UNVERIFIED — group $was_pgid may still be running"
-    nja_say "      Inspect: ps -o pid,pgid,args -g $was_pgid"
+    if [ -n "$was_pgid" ]; then
+      nja_fail "TEARDOWN UNVERIFIED — group $was_pgid may still be running"
+      nja_say "      Inspect: ps -o pid,pgid,args -g $was_pgid"
+    else
+      nja_fail "TEARDOWN UNVERIFIED — no process group was ever created to verify"
+    fi
     return 4
   fi
   return 0
@@ -268,3 +298,61 @@ finish() {
   nja_say "  log kept at: $LOG"
   exit "$code"
 }
+
+# ── readiness ────────────────────────────────────────────────────────────────
+# turbo prefixes output with "<package>:<task>:". apps/api defines both `dev`
+# and `dev:worker`, so the worker's lines carry ":dev:worker:" and the api's do
+# not — a package-name-agnostic discriminator that holds across all six repos.
+NEST_READY='Nest application successfully started|Application is running on'
+NJA_READY_API="${NJA_READY_API:-$NEST_READY}"
+NJA_READY_WORKER="${NJA_READY_WORKER:-$NEST_READY}"
+NJA_READY_WEB="${NJA_READY_WEB:-Ready in|started server on|Local:}"
+
+FATAL='UnknownDependenciesException|Cannot find module|ERR_MODULE_NOT_FOUND|ERR_PNPM_|UnhandledPromiseRejection'
+
+saw_api()    { grep -E ':dev:' "$LOG" 2>/dev/null | grep -v ':dev:worker:' | grep -qE "$NJA_READY_API"; }
+saw_worker() { grep -E ':dev:worker:' "$LOG" 2>/dev/null | grep -qE "$NJA_READY_WORKER"; }
+saw_web()    { grep -qE "$NJA_READY_WEB" "$LOG" 2>/dev/null; }
+saw_fatal()  { grep -qE "$FATAL" "$LOG" 2>/dev/null; }
+
+api_ok=0; web_ok=0; worker_ok=0; waited=0
+while [ "$waited" -lt "$TIMEOUT" ]; do
+  if saw_fatal; then
+    nja_fail "fatal pattern in the dev log:"
+    grep -E "$FATAL" "$LOG" | head -5 | sed 's/^/        /'
+    nja_say ""
+    nja_say "  If this is UnknownDependenciesException, it is almost certainly a duplicate"
+    nja_say "  peer resolution — run nja-deps-doctor.sh and read hazards.md §1."
+    finish 2
+  fi
+
+  [ "$api_ok" -eq 0 ] && saw_api && port_busy "$API_PORT" && { api_ok=1; nja_ok "api ready (port $API_PORT)"; }
+  [ "$web_ok" -eq 0 ] && saw_web && port_busy "$WEB_PORT" && { web_ok=1; nja_ok "web ready (port $WEB_PORT)"; }
+  [ "$worker_ok" -eq 0 ] && saw_worker && { worker_ok=1; nja_ok "worker ready"; }
+
+  [ "$api_ok" -eq 1 ] && [ "$web_ok" -eq 1 ] && [ "$worker_ok" -eq 1 ] && break
+
+  if ! group_alive "$PGID"; then
+    nja_fail "the dev stack exited before becoming ready"
+    tail -60 "$LOG" | sed 's/^/        /'
+    finish 2
+  fi
+
+  sleep 2; waited=$((waited + 2))
+done
+
+if [ "$api_ok" -eq 0 ] || [ "$web_ok" -eq 0 ]; then
+  nja_fail "not ready after ${TIMEOUT}s (api=$api_ok web=$web_ok worker=$worker_ok)"
+  tail -60 "$LOG" | sed 's/^/        /'
+  finish 2
+fi
+
+# An unmatched log regex must never masquerade as a boot failure.
+if [ "$worker_ok" -eq 0 ]; then
+  nja_warn "worker readiness signal never matched — api and web booted and no fatal"
+  nja_say "        pattern appeared, so this is reported as a PASS. Override the pattern"
+  nja_say "        with NJA_READY_WORKER if this repo logs differently."
+fi
+
+nja_ok "dev stack booted"
+finish 0

@@ -28,7 +28,13 @@ while True:
 bind_port "$API_PORT"
 bind_port "$WEB_PORT"
 
-sleep 1
+# 4s, not 1s: Task 10's readiness poll declares the stack ready the instant
+# both ports are bound AND all three ready lines are in the log — all of
+# which happen back-to-back right after this sleep. A 1s margin left the
+# I3 SIGINT-race test (test-dev-boot.sh) racing the outer harness's own
+# detect-and-signal latency almost evenly, which was intermittently lost.
+# 4s keeps this fixture reliably alive long enough for that signal to land.
+sleep 4
 echo "fixture-api:dev: [Nest] Nest application successfully started"
 echo "fixture-api:dev:worker: [Nest] Nest application successfully started"
 echo "fixture-web:dev:  ✓ Ready in 1.2s"

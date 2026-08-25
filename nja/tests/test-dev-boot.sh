@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Tests for nja-dev-boot.sh — Task 9 scope only.
+# Tests for nja-dev-boot.sh — Task 9 (launch/teardown) + Task 10 (readiness,
+# fatal-pattern detection, final exit-code selection).
 #
-# Task 9 delivers process-group launch + verified teardown. The readiness
-# poll loop that calls finish() (and therefore the "ports free" message and
-# a guaranteed exit-0-on-clean-boot) does not exist until Task 10, so this
-# suite does not assert on either — asserting them now would either fail
-# forever or require weakening the script to fake a pass. Both are refused.
+# Task 9 delivers process-group launch + verified teardown. Task 10 appends
+# the readiness poll loop that calls finish() — the "clean boot exits 0" and
+# "ports free" assertions Task 9 deliberately deferred (they could not pass
+# until finish() was ever reached) are restored below, alongside the new
+# readiness-discrimination, fatal-pattern, and occupied-port coverage.
 #
-# What this suite DOES assert, and why it is enough for this task:
+# What the Task 9 portion of this suite asserts, and why it is enough for
+# that task:
 #   - --help, usage, and the `shift 2` regression guard (option parsing)
 #   - the bystander test: the single most important test in this plan. It
 #     proves the process-group kill path (a) actually reaps every group
@@ -285,14 +287,16 @@ rm -rf "$_ndb_repo5"
 # what this assertion is testing.)
 #
 # Uses dev-ok.sh, not stubborn.sh: stubborn.sh has zero artificial delay
-# before it prints its ready lines, so the boot script's own settle-wait
-# (Task 9 has no readiness detection yet) can complete and tear down
-# naturally within roughly the same ~100ms it takes this loop to detect the
-# "group:" line and send SIGINT — a real race that this assertion lost most
-# runs, passing for the wrong reason (natural completion, not the signal
-# path) or failing outright. dev-ok.sh's built-in 1s delay guarantees the
-# script is still inside its settle-wait, definitely alive, when SIGINT
-# arrives.
+# before it prints its ready lines, so the boot script (whether still in its
+# Task 9 settle-wait or, since Task 10, its readiness poll) can complete and
+# tear down naturally within roughly the same ~100ms it takes this loop to
+# detect the "group:" line and send SIGINT — a real race that this assertion
+# lost most runs, passing for the wrong reason (natural completion, not the
+# signal path) or failing outright. dev-ok.sh's artificial delay before its
+# ready lines (see the fixture — widened once already, when Task 10's
+# readiness poll made natural completion fast enough to start racing this
+# same signal again) guarantees the script is still alive, boot in progress,
+# when SIGINT arrives.
 _ndb_repo6="$(t_mkrepo)"
 _ndb_boot_out6="$(mktemp -t nja-boot-out)"
 set -m
@@ -364,3 +368,219 @@ t_assert_not_contains "$_ndb_src" "ps aux" "dev-boot never lists all processes v
 t_assert_not_contains "$_ndb_src" "ps -ef" "dev-boot never lists all processes via ps -ef (a ps|grep|kill precursor)"
 t_assert_not_contains "$_ndb_src" "ps -A" "dev-boot never lists all processes via ps -A (a ps|grep|kill precursor)"
 t_assert_not_contains "$_ndb_src" "ps -ax" "dev-boot never lists all processes via ps -ax (a ps|grep|kill precursor)"
+
+# ── Task 10: readiness discrimination, fatal patterns, exit codes ───────────
+#
+# _ndb_squat <port> <label> — binds a port in the background with python3,
+# never `nc -l` (nc's listen flag is not portable across BSD/GNU builds, and
+# a squatter that silently fails to bind makes every port assertion that
+# depends on it vacuous — the single most important assertion in this plan,
+# "the squatting process was left alone", must never cry wolf).
+#
+# Three things this earns its keep on:
+#   1. Checks the port is free BEFORE binding. A port left bound by an
+#      earlier/interrupted run must surface as "port already bound — a leak
+#      from an earlier run", not as a python3 crash mid-test.
+#   2. Redirects python3's stdout/stderr to /dev/null before backgrounding.
+#      Without this, capturing its PID via `$(_ndb_squat ...)` deadlocks the
+#      whole suite: command substitution reads until the pipe sees EOF, and
+#      a backgrounded child that inherits the pipe's write end (and never
+#      exits, by design — it holds the port until killed) means that EOF
+#      never comes. This was the actual cause of a suite-wide hang: the
+#      python3 process only "worked" by accident when it crashed early on
+#      Errno 48 (address in use), closing the pipe; a genuinely successful
+#      bind hung forever.
+#   3. Confirms BOTH the process is alive and the port is truly LISTENing
+#      before declaring success, and fails loudly/immediately (not silently)
+#      otherwise — callers must skip any assertion that depends on the
+#      squat when this returns non-zero, since it is otherwise meaningless.
+# Sets _ndb_squat_pid on success (empty on failure).
+_ndb_squat() {
+  local port="$1" label="$2" n=0
+  _ndb_squat_pid=""
+
+  if lsof -ti :"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    t_fail "$label: port $port bound before the squat" \
+      "port $port is already bound — a leak from an earlier run, not this test"
+    return 1
+  fi
+
+  python3 -c '
+import socket, sys, time
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", port))
+s.listen(1)
+while True:
+    time.sleep(1)
+' "$port" >/dev/null 2>&1 &
+  _ndb_squat_pid=$!
+
+  while kill -0 "$_ndb_squat_pid" 2>/dev/null && ! lsof -ti :"$port" -sTCP:LISTEN >/dev/null 2>&1 && [ "$n" -lt 50 ]; do
+    sleep 0.1; n=$((n + 1))
+  done
+
+  if kill -0 "$_ndb_squat_pid" 2>/dev/null && lsof -ti :"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    t_pass "$label: squatter genuinely bound port $port"
+    return 0
+  fi
+
+  t_fail "$label: squatter genuinely bound port $port" \
+    "alive=$(kill -0 "$_ndb_squat_pid" 2>/dev/null && echo yes || echo no) listening=$(lsof -ti :"$port" -sTCP:LISTEN >/dev/null 2>&1 && echo yes || echo no) — skipping the assertions that depend on it"
+  kill -9 "$_ndb_squat_pid" 2>/dev/null
+  wait "$_ndb_squat_pid" 2>/dev/null
+  _ndb_squat_pid=""
+  return 1
+}
+
+# _ndb_unsquat <port> <pid> <label> — kill exactly this pid (never a
+# pattern) and confirm the port it held is free again afterward, so a leak
+# surfaces here as an obvious diagnostic instead of corrupting a later test.
+_ndb_unsquat() {
+  local port="$1" pid="$2" label="$3" n=0
+  [ -n "$pid" ] || return 0
+  kill "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  while lsof -ti :"$port" -sTCP:LISTEN >/dev/null 2>&1 && [ "$n" -lt 30 ]; do
+    sleep 0.1; n=$((n + 1))
+  done
+  if lsof -ti :"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    t_fail "$label: port $port free after cleanup" "still bound after killing pid $pid"
+  else
+    t_pass "$label: port $port free after cleanup"
+  fi
+}
+
+# ── clean boot: readiness discrimination + the two Task 9 deferred asserts ──
+# api vs worker readiness are told apart purely by turbo's log-line prefix
+# (":dev:" vs ":dev:worker:"), which is what dev-ok.sh's three ready lines
+# exercise. "clean boot exits 0" and "reports ports free" were removed from
+# Task 9's suite because finish() was never reached then; restored here.
+_ndb_repo7="$(t_mkrepo)"
+_ndb_boot_out7="$(mktemp -t nja-boot-out)"
+_ndb_boot_bounded "$_ndb_boot_out7" 300 -- \
+  env API_PORT=13958 PORT=13959 NJA_DEV_CMD="bash $_ndb_fix/dev-ok.sh" \
+  bash "$_ndb_boot" --root "$_ndb_repo7" --timeout 30
+
+t_assert_eq "0" "$_ndb_last_code" "clean boot exits 0"
+_ndb_out7="$(cat "$_ndb_boot_out7" 2>/dev/null)"
+t_assert_contains "$_ndb_out7" "api ready" "clean boot reports api ready (not the worker's :dev:worker: lines)"
+t_assert_contains "$_ndb_out7" "web ready" "clean boot reports web ready"
+t_assert_contains "$_ndb_out7" "worker ready" "clean boot reports worker ready"
+t_assert_contains "$_ndb_out7" "ports free" "clean boot reports the ports being released"
+
+if lsof -ti :13958 -sTCP:LISTEN >/dev/null 2>&1 || lsof -ti :13959 -sTCP:LISTEN >/dev/null 2>&1; then
+  t_fail "ports free after clean boot" "a port is still bound"
+else
+  t_pass "ports free after clean boot"
+fi
+
+[ -n "$_ndb_last_log" ] && rm -f "$_ndb_last_log"
+rm -f "$_ndb_boot_out7"
+rm -rf "$_ndb_repo7"
+
+# ── timeout: a stack that never becomes ready still tears down and exits 2 ──
+_ndb_repo8="$(t_mkrepo)"
+_ndb_boot_out8="$(mktemp -t nja-boot-out)"
+_ndb_boot_bounded "$_ndb_boot_out8" 200 -- \
+  env API_PORT=13960 PORT=13961 NJA_DEV_CMD="bash $_ndb_fix/dev-hang.sh" \
+  bash "$_ndb_boot" --root "$_ndb_repo8" --timeout 6
+
+t_assert_eq "2" "$_ndb_last_code" "a boot that never becomes ready exits 2"
+t_assert_contains "$(cat "$_ndb_boot_out8" 2>/dev/null)" "ports free" "teardown still runs after a timeout"
+
+if lsof -ti :13960 -sTCP:LISTEN >/dev/null 2>&1 || lsof -ti :13961 -sTCP:LISTEN >/dev/null 2>&1; then
+  t_fail "ports free after a readiness timeout" "a port is still bound"
+else
+  t_pass "ports free after a readiness timeout"
+fi
+
+[ -n "$_ndb_last_log" ] && rm -f "$_ndb_last_log"
+rm -f "$_ndb_boot_out8"
+rm -rf "$_ndb_repo8"
+
+# ── fatal pattern short-circuits the wait ────────────────────────────────────
+# Pins the timing: a fatal log line must be caught well inside the timeout,
+# not merely eventually. --timeout is 60s; the assertion requires < 30s.
+_ndb_repo9="$(t_mkrepo)"
+_ndb_boot_out9="$(mktemp -t nja-boot-out)"
+_ndb_start9=$SECONDS
+_ndb_boot_bounded "$_ndb_boot_out9" 400 -- \
+  env API_PORT=13962 PORT=13963 NJA_DEV_CMD="bash $_ndb_fix/dev-fatal.sh" \
+  bash "$_ndb_boot" --root "$_ndb_repo9" --timeout 60
+_ndb_elapsed9=$((SECONDS - _ndb_start9))
+
+t_assert_eq "2" "$_ndb_last_code" "a fatal log pattern exits 2"
+t_assert_contains "$(cat "$_ndb_boot_out9" 2>/dev/null)" "UnknownDependenciesException" \
+  "the fatal pattern is quoted in the report"
+if [ "$_ndb_elapsed9" -lt 30 ]; then
+  t_pass "fatal pattern short-circuits the wait"
+else
+  t_fail "fatal pattern short-circuits the wait" "took ${_ndb_elapsed9}s of a 60s timeout"
+fi
+
+[ -n "$_ndb_last_log" ] && rm -f "$_ndb_last_log"
+rm -f "$_ndb_boot_out9"
+rm -rf "$_ndb_repo9"
+
+# ── occupied port aborts with exit 1, and the squatter is left alone ────────
+# The squatter is a plain unrelated process holding a port dev-boot wants —
+# exactly the kind of thing a name/pattern kill would be tempted to reap.
+# It must survive untouched; dev-boot's precondition check must simply
+# refuse to start.
+_ndb_repo10="$(t_mkrepo)"
+_ndb_p10=13964
+if _ndb_squat "$_ndb_p10" "occupied-port squatter"; then
+  _ndb_pid10="$_ndb_squat_pid"
+
+  t_assert_exit 1 "an occupied port aborts with exit 1" -- \
+    env API_PORT="$_ndb_p10" PORT=13965 NJA_DEV_CMD="bash $_ndb_fix/dev-ok.sh" \
+    bash "$_ndb_boot" --root "$_ndb_repo10" --timeout 10
+
+  if kill -0 "$_ndb_pid10" 2>/dev/null; then
+    t_pass "the squatting process was left alone"
+  else
+    t_fail "the squatting process was left alone" "we killed a process we did not start"
+  fi
+  _ndb_unsquat "$_ndb_p10" "$_ndb_pid10" "occupied-port squatter"
+fi
+rm -rf "$_ndb_repo10"
+
+# ── NJA_FORCE_TEARDOWN_FAIL requires an explicit "1"/"true" ─────────────────
+# Previously any non-empty value (including "0") activated the hook. "0"
+# must now be a no-op: a clean boot with it set still exits 0.
+_ndb_repo11="$(t_mkrepo)"
+_ndb_boot_out11="$(mktemp -t nja-boot-out)"
+_ndb_boot_bounded "$_ndb_boot_out11" 300 -- \
+  env API_PORT=13966 PORT=13967 NJA_DEV_CMD="bash $_ndb_fix/dev-ok.sh" NJA_FORCE_TEARDOWN_FAIL=0 \
+  bash "$_ndb_boot" --root "$_ndb_repo11" --timeout 30
+
+t_assert_eq "0" "$_ndb_last_code" "NJA_FORCE_TEARDOWN_FAIL=0 does not activate the force-fail hook"
+
+[ -n "$_ndb_last_log" ] && rm -f "$_ndb_last_log"
+rm -f "$_ndb_boot_out11"
+rm -rf "$_ndb_repo11"
+
+# ── a precondition failure is never reclassified as "teardown unverified" ───
+# NJA_FORCE_TEARDOWN_FAIL only means anything once a process group actually
+# exists. With a busy port, dev-boot never reaches `set -m` — PGID stays ""
+# — so forcing the hook must NOT turn this exit 1 into exit 4, and must not
+# print a diagnostic built around an empty pgid.
+_ndb_repo12="$(t_mkrepo)"
+_ndb_p12=13968
+if _ndb_squat "$_ndb_p12" "precondition-reclass squatter"; then
+  _ndb_pid12="$_ndb_squat_pid"
+
+  _ndb_out12="$(env API_PORT="$_ndb_p12" PORT=13969 NJA_FORCE_TEARDOWN_FAIL=1 \
+    bash "$_ndb_boot" --root "$_ndb_repo12" --timeout 10 2>&1)"
+  _ndb_code12=$?
+
+  t_assert_eq "1" "$_ndb_code12" \
+    "a precondition failure with NJA_FORCE_TEARDOWN_FAIL=1 still exits 1, not reclassified to 4"
+  t_assert_not_contains "$_ndb_out12" "TEARDOWN UNVERIFIED" \
+    "a precondition failure never prints the teardown-unverified diagnostic (no group was ever launched)"
+
+  _ndb_unsquat "$_ndb_p12" "$_ndb_pid12" "precondition-reclass squatter"
+fi
+rm -rf "$_ndb_repo12"
