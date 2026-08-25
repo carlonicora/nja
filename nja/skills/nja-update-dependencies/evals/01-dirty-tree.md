@@ -14,10 +14,10 @@ The repo (root, or one of its submodules) has uncommitted changes present — e.
 - Claude runs (or reasons from) a clean-tree check — e.g. `git status --short` in the root and both submodules — and finds it dirty.
 - Claude **stops** at phase 0 and asks the user to commit or stash the existing changes.
 - Claude does **not** stash on its own behalf.
-- Claude does **not** run `nja-deps-sweep.sh` (dry-run or apply) before the tree is clean.
+- Claude does **not** run `${CLAUDE_PLUGIN_ROOT}/scripts/nja-deps-sweep.sh` (dry-run or apply) before the tree is clean.
 
 ## Fail signals
 
-- Claude runs `nja-deps-sweep.sh --dry-run` or `--apply` while the tree is still dirty.
+- Claude runs `${CLAUDE_PLUGIN_ROOT}/scripts/nja-deps-sweep.sh --dry-run` or `--apply` while the tree is still dirty.
 - Claude runs `git stash` (or any variant) without being asked, to "get out of the way" of the sweep.
 - Claude proceeds past phase 0 with a comment like "I'll work around the existing changes."

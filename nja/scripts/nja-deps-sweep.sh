@@ -12,7 +12,9 @@
 #
 # Exit codes:
 #   0  success
-#   1  usage or environment error
+#   1  usage or environment error, including ncu/pnpm themselves failing to
+#      resolve one or more packages (a dead registry, network, or auth
+#      problem) — reported explicitly, never folded into "up to date"
 #   3  refused to write an override that would lower a declared floor
 set -uo pipefail
 
@@ -84,11 +86,24 @@ if [ ! -f "$ROOT/pnpm-workspace.yaml" ]; then
 fi
 
 command -v ncu >/dev/null 2>&1 || { nja_fail "ncu (npm-check-updates) is not on PATH"; exit 1; }
+command -v pnpm >/dev/null 2>&1 || { nja_fail "pnpm is not on PATH"; exit 1; }
+
+# FAIL_LOG accumulates "surface<TAB>entry<TAB>reason" lines for every real
+# resolution failure (a broken/unreachable ncu or pnpm — as opposed to a
+# package simply having no update available). Written to a real file, not a
+# shell variable, because sweep_manifests/sweep_catalog/sweep_overrides are
+# each invoked via command substitution ("$(...)") and therefore run in a
+# subshell — a variable they set would vanish the instant that subshell
+# exits, but a file write survives. Checked before ANY success message is
+# printed: a dead registry must never be indistinguishable from "already up
+# to date" (see the FAIL_LOG check below, and the one after --apply).
+FAIL_LOG="$(mktemp -t nja-sweep-fail)"
+trap 'rm -f "$FAIL_LOG"' EXIT
 
 # ── surface 1: workspace manifests ───────────────────────────────────────────
 sweep_manifests() {
   local root="$1" reject="$2" apply="$3"
-  local ws manifest json args
+  local ws manifest json args rc
   while IFS= read -r ws; do
     manifest="$root/$ws/package.json"
     [ "$ws" = "." ] && manifest="$root/package.json"
@@ -98,7 +113,11 @@ sweep_manifests() {
     [ -n "$reject" ] && args+=(-x "$reject")
     [ "$apply" -eq 1 ] && args+=(-u)
 
-    json="$(ncu "${args[@]}" 2>/dev/null)"
+    json="$(ncu "${args[@]}" 2>/dev/null)"; rc=$?
+    if [ "$rc" -ne 0 ]; then
+      printf 'manifest\t%s\tncu exited %s\n' "$ws" "$rc" >> "$FAIL_LOG"
+      continue
+    fi
     [ -n "$json" ] || continue
 
     MANIFEST="$manifest" node -e '
@@ -118,14 +137,29 @@ EOF
 # ── version resolution ───────────────────────────────────────────────────────
 # Latest published version of a package. NJA_LATEST_STUB makes this hermetic
 # for tests: a "pkg<TAB>version" file consulted instead of the registry.
+#
+# Exit codes distinguish two different kinds of "no answer", so callers can
+# tell a genuine registry/tool failure from a merely-absent stub entry:
+#   0  resolved — the version is on stdout
+#   1  stub path: this package has no entry in NJA_LATEST_STUB. Not a
+#      failure — the stub is deliberately partial in most test fixtures, and
+#      "no data for this package" has always meant "nothing to propose".
+#   2  live path: pnpm itself failed or returned nothing. This IS a
+#      resolution failure — callers must report it, never fold it into "no
+#      update available" (see FAIL_LOG above).
 latest_version() {
-  local pkg="$1"
+  local pkg="$1" out rc
   if [ -n "${NJA_LATEST_STUB:-}" ] && [ -f "$NJA_LATEST_STUB" ]; then
     awk -F'\t' -v p="$pkg" '$1 == p { print $2; found = 1; exit } END { exit(found ? 0 : 1) }' \
       "$NJA_LATEST_STUB"
     return $?
   fi
-  pnpm view "$pkg" version 2>/dev/null | tail -1
+  out="$(pnpm view "$pkg" version 2>/dev/null | tail -1)"; rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$out" ]; then
+    return 2
+  fi
+  printf '%s\n' "$out"
+  return 0
 }
 
 is_rejected() {
@@ -200,12 +234,17 @@ write_yaml_version() {
 # ── surface 2: catalog ───────────────────────────────────────────────────────
 sweep_catalog() {
   local root="$1" reject="$2" apply="$3"
-  local yaml="$root/pnpm-workspace.yaml" pkg cur lat new wrc
+  local yaml="$root/pnpm-workspace.yaml" pkg cur lat new wrc lrc
   while IFS=$'\t' read -r pkg cur; do
     [ -n "$pkg" ] || continue
     is_rejected "$pkg" "$reject" && continue
     case "$cur" in catalog:*) continue ;; esac
-    lat="$(latest_version "$pkg")" || continue
+    lat="$(latest_version "$pkg")"; lrc=$?
+    if [ "$lrc" -eq 2 ]; then
+      printf 'catalog\t%s\tcould not resolve the latest version (pnpm view failed)\n' "$pkg" >> "$FAIL_LOG"
+      continue
+    fi
+    [ "$lrc" -ne 0 ] && continue
     [ -n "$lat" ] || continue
     new="$(reranged "$cur" "$lat")"
     [ "$new" = "$cur" ] && continue
@@ -266,12 +305,17 @@ EOF
 
 sweep_overrides() {
   local root="$1" reject="$2" apply="$3"
-  local yaml="$root/pnpm-workspace.yaml" pkg cur lat new floor wrc
+  local yaml="$root/pnpm-workspace.yaml" pkg cur lat new floor wrc lrc
   while IFS=$'\t' read -r pkg cur; do
     [ -n "$pkg" ] || continue
     is_rejected "$pkg" "$reject" && continue
     case "$cur" in catalog:*) continue ;; esac
-    lat="$(latest_version "$pkg")" || continue
+    lat="$(latest_version "$pkg")"; lrc=$?
+    if [ "$lrc" -eq 2 ]; then
+      printf 'overrides\t%s\tcould not resolve the latest version (pnpm view failed)\n' "$pkg" >> "$FAIL_LOG"
+      continue
+    fi
+    [ "$lrc" -ne 0 ] && continue
     [ -n "$lat" ] || continue
     new="$(reranged "$cur" "$lat")"
     [ "$new" = "$cur" ] && continue
@@ -283,7 +327,7 @@ sweep_overrides() {
     floor="$(declared_floor "$root" "$pkg")"
     if [ -n "$floor" ] && [ "$(semver_cmp "$new" "$floor")" = "-1" ]; then
       nja_fail "override $pkg: $new would sit below the declared floor $floor — refusing"
-      nja_say "        an override REPLACES declared ranges; a low one resolves under the floor silently."
+      nja_say "        an override REPLACES declared ranges; a low one resolves under the floor silently." >&2
       return 3
     fi
 
@@ -317,6 +361,22 @@ $ovr"
 
 rows="$(printf '%s\n' "$rows" | grep -v '^[[:space:]]*$' | awk '!seen[$0]++')"
 
+# A dead ncu/pnpm must never be indistinguishable from "nothing to update" —
+# check FAIL_LOG before any success message, dry-run or applied. "Up to
+# date" and "could not tell" are different findings; folding the second into
+# the first is exactly the silent no-op this check exists to prevent.
+if [ -s "$FAIL_LOG" ]; then
+  nja_say ""
+  nja_fail "$(wc -l < "$FAIL_LOG" | tr -d ' ') package(s) could not be resolved — refusing to report success"
+  while IFS=$'\t' read -r surf pkg reason; do
+    [ -n "$surf" ] || continue
+    nja_say "  ✖ $surf: $pkg — $reason"
+  done < "$FAIL_LOG"
+  nja_say "  This means ncu or pnpm itself failed (network, auth, a broken registry —"
+  nja_say "  not \"no update available\"). Fix the tool/registry, then re-run."
+  exit 1
+fi
+
 if [ -z "$rows" ]; then
   nja_ok "everything is already up to date on all three surfaces"
 else
@@ -338,6 +398,21 @@ if [ "$APPLY" -eq 1 ]; then
   ovr_code=$?
   if [ "$ovr_code" -eq 3 ]; then exit 3; fi
   if [ "$ovr_code" -ne 0 ]; then exit 1; fi
+
+  # Re-check after the apply-time calls too, not just the dry-run above: a
+  # resolver that turned flaky between the two passes must not still print
+  # "applied" — sweep_manifests in particular has no return-code path of its
+  # own (its ncu calls happen per-workspace, inside a loop), so FAIL_LOG is
+  # the only place that failure surfaces.
+  if [ -s "$FAIL_LOG" ]; then
+    nja_say ""
+    nja_fail "$(wc -l < "$FAIL_LOG" | tr -d ' ') package(s) could not be resolved during apply — NOT printing success"
+    while IFS=$'\t' read -r surf pkg reason; do
+      [ -n "$surf" ] || continue
+      nja_say "  ✖ $surf: $pkg — $reason"
+    done < "$FAIL_LOG"
+    exit 1
+  fi
 
   nja_say ""
   nja_ok "applied — now run ONE root install:"

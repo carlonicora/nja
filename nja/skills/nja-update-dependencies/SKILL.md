@@ -7,6 +7,8 @@ description: Use when updating, upgrading, or sweeping npm dependencies in a nes
 
 Update every dependency surface of an nja monorepo — workspace manifests, the pnpm `catalog:` block, and `overrides:` — then verify the result with lint, build, a real `pnpm dev` boot, and tests. The sweep never commits: it leaves the working tree dirty with exactly the diff the user reviews and tests by hand before committing it themselves.
 
+The scripts this skill drives live in `${CLAUDE_PLUGIN_ROOT}/scripts/` — `${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin's root at runtime, never to a path inside the target monorepo.
+
 ## Core principle
 
 **The scripts own everything mechanical; the model owns only judgment calls.** `nja-deps-sweep.sh`, `nja-deps-doctor.sh`, and `nja-dev-boot.sh` are deterministic — they compute the sweep, detect duplicate resolutions, and boot/tear down the dev stack. The model's job is the parts a script cannot decide: which majors to take, how to reconcile a library's peer range against what its consuming app now resolves, and how to read a failure and route it to the right hazard. **Never re-derive a check a script already performed — read its exit code.**
@@ -16,12 +18,12 @@ Update every dependency surface of an nja monorepo — workspace manifests, the 
 | Phase | Action | Gate |
 |---|---|---|
 | 0 | Preflight: clean tree (root + both submodules); baseline `pnpm lint`, `pnpm build`, `pnpm test`; record submodule branches/SHAs; confirm Neo4j and Redis are up | **STOP** if the tree is dirty or the baseline is red |
-| 1 | `nja-deps-sweep.sh --dry-run`; load holds; re-test each hold's unblock condition | **ASK** on every major |
-| 2 | `nja-deps-sweep.sh --apply --reject <holds>`, then ONE `CI=true pnpm install --no-frozen-lockfile` at the root | — |
+| 1 | `${CLAUDE_PLUGIN_ROOT}/scripts/nja-deps-sweep.sh --dry-run`; load holds; re-test each hold's unblock condition | **STOP** on exit 1; exit 3 means an override would sit below a declared floor — resolve before proceeding; **ASK** on every major |
+| 2 | `${CLAUDE_PLUGIN_ROOT}/scripts/nja-deps-sweep.sh --apply --reject <holds>`, then ONE `CI=true pnpm install --no-frozen-lockfile` at the root | **STOP** on exit 1; exit 3 means an override would sit below a declared floor — resolve before proceeding |
 | 3 | Reconcile submodule `peerDependencies` and catalog floors against what the apps now resolve | — |
-| 4 | `nja-deps-doctor.sh` | **STOP** on any non-zero exit |
+| 4 | `${CLAUDE_PLUGIN_ROOT}/scripts/nja-deps-doctor.sh` | **STOP** on any non-zero exit |
 | 5 | `pnpm lint` → `pnpm build` → `pnpm test` | **STOP** on error |
-| 6 | `nja-dev-boot.sh` | **STOP** on any non-zero exit; exit 4 means something is still running — report that first |
+| 6 | `${CLAUDE_PLUGIN_ROOT}/scripts/nja-dev-boot.sh` | **STOP** on any non-zero exit; exit 4 means something is still running — report that first |
 | 7 | Report; rewrite the `DEFERRED MAJOR BUMPS` block in `scripts/update.sh` | — |
 
 ## Phase 0 — why a clean tree, not a tag
@@ -40,7 +42,7 @@ If an app crossed a major on a package that is a `peerDependency` of its library
 
 ## Phase 6 — the lazy baseline
 
-The phase-0 baseline deliberately excludes a dev boot; it is slow and most runs never need it. If phase 6 fails, attribute it *then*: say so, `git stash -u` in each repo, reinstall, re-run `nja-dev-boot.sh` on the pre-sweep state, restore the stash. If the baseline also fails, the breakage is pre-existing and the sweep is not at fault. **This is the only place the skill may stash, it must announce it first, and it must restore.**
+The phase-0 baseline deliberately excludes a dev boot; it is slow and most runs never need it. If phase 6 fails, attribute it *then*: say so, `git stash -u` in each repo, reinstall, re-run `${CLAUDE_PLUGIN_ROOT}/scripts/nja-dev-boot.sh` on the pre-sweep state, restore the stash. If the baseline also fails, the breakage is pre-existing and the sweep is not at fault. **This is the only place the skill may stash, it must announce it first, and it must restore.**
 
 If `nja-dev-boot.sh` exits 4, treat that as its own emergency before doing anything else in this phase: exit 4 means teardown could not be verified and a process group may still be running. Report it to the user first — with the `ps -o pid,pgid,args -g <pgid>` inspection line the script printed — before starting the lazy-baseline stash dance or drawing any conclusion about the sweep.
 
@@ -61,7 +63,7 @@ Also rewrite the `DEFERRED MAJOR BUMPS` block at the top of `scripts/update.sh` 
 | "I'll `pkill -f 'next dev'` to clean up." | Forbidden — no `pkill`, `killall`, `pgrep`, or any name/pattern kill, ever. Several nja repos run at once with byte-identical command lines; a name pattern cannot tell them apart and has already destroyed unrelated work on this machine. `nja-dev-boot.sh` tears down by the process group it created — never re-derive that by hand. |
 | "The port is busy, I'll free it first." | That process is not ours. Abort and tell the user. Never free a busy port. |
 | "`ncu` reported nothing for react, so react is current." | `ncu` only reads manifest ranges — it cannot see `catalog:` — verified. The catalog is a separate surface; the sweep script handles it. See `references/hazards.md` §3. |
-| "The readiness poll says not-ready, but the log clearly has the ready line — the boot must be flaky." | Suspect the matcher before the boot. A real incident: `grep -q` under `pipefail` returns a false negative once the log passes the ~16 KB pipe buffer, even though the ready line is plainly present. The readiness regexes (`NJA_READY_API` / `NJA_READY_WEB` / `NJA_READY_WORKER`) are overridable per repo if a repo's own log format needs it — check those before assuming the stack is actually broken. A worker that is merely slow, not broken, is a separate lever: once api and web are both ready, the worker gets a grace window (`NJA_WORKER_GRACE`, default 10s) before the run degrades to WARN + PASS rather than failing — if a repo's worker is genuinely slower than that, raise `NJA_WORKER_GRACE` rather than treating the WARN as a real failure. |
+| "The readiness poll says not-ready, but the log clearly has the ready line — the boot must be flaky." | Suspect the matcher before the boot. A real incident: `grep -q` under `pipefail` returns a false negative once the log passes the ~16 KB pipe buffer, even though the ready line is plainly present. The readiness regexes (`NJA_READY_API` / `NJA_READY_WEB` / `NJA_READY_WORKER`) are overridable per repo if a repo's own log format needs it — check those before assuming the stack is actually broken. That override only helps once a line has already been routed to the right stream: `nja-dev-boot.sh` first splits api from worker lines by turbo's own `:dev:` / `:dev:worker:` task-prefix, upstream of and not itself controlled by these regexes — a repo whose log lacks that prefix needs a different fix, not a wider `NJA_READY_*` pattern. A worker that is merely slow, not broken, is a separate lever: once api and web are both ready, the worker gets a grace window (`NJA_WORKER_GRACE`, default 10s) before the run degrades to WARN + PASS rather than failing — if a repo's worker is genuinely slower than that, raise `NJA_WORKER_GRACE` rather than treating the WARN as a real failure. |
 | "Tests pass, so the upgrade is safe." | Unit tests mock NestJS DI and cannot catch the dual-instance failure. The dev boot is the real gate. |
 | "I'll bump it and revert afterwards, like the old script did." | Holds go to `ncu --reject` so they are never bumped. Revert-after is how holds get missed. |
 | "The tree was already dirty, I'll work around it." | A dirty tree at phase 0 means stop and ask. Never stash on the user's behalf there — a dirty start makes the final diff unreviewable and rollback destructive. |

@@ -124,15 +124,21 @@ nja/
     │   └── architecture-gate.sh    # Stop gate (deterministic)
     ├── scripts/
     │   ├── nja-lint.sh             # deterministic anti-pattern checker
-    │   └── nja-detect.sh           # "is this an nja project?" guard
-    └── skills/
-        ├── nja-architecture/   # routing table + references/ + evals/
-        ├── nja-generate/       # generator workflow + references/
-        ├── nja-arrows/         # Arrows.app diagram → structure/*.json → nja-generate
-        ├── nja-writing-plan/   # plan-writing wrapper
-        ├── nja-delegate-implementation/  # plan → prompt file for a fresh session
-        ├── nja-verify/         # architecture audit
-        └── nja-handoff/        # session → handoff document for the next agent
+    │   ├── nja-detect.sh           # "is this an nja project?" guard
+    │   ├── nja-deps-lib.sh         # sourced helpers for the deps scripts below
+    │   ├── nja-deps-sweep.sh       # dependency sweep (manifests + catalog + overrides)
+    │   ├── nja-deps-doctor.sh      # post-install duplicate-resolution checks
+    │   └── nja-dev-boot.sh         # boot/verify/tear down a real `pnpm dev`
+    ├── skills/
+    │   ├── nja-architecture/   # routing table + references/ + evals/
+    │   ├── nja-generate/       # generator workflow + references/
+    │   ├── nja-arrows/         # Arrows.app diagram → structure/*.json → nja-generate
+    │   ├── nja-writing-plan/   # plan-writing wrapper
+    │   ├── nja-delegate-implementation/  # plan → prompt file for a fresh session
+    │   ├── nja-verify/         # architecture audit
+    │   ├── nja-update-dependencies/  # dependency sweep workflow + references/ + evals/
+    │   └── nja-handoff/        # session → handoff document for the next agent
+    └── tests/                  # bash test suite for scripts/*.sh (run.sh, lib.sh, fixtures/)
 ```
 
 ## License

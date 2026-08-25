@@ -148,13 +148,16 @@ group_alive() { [ -n "$(ps -o pid= -g "$1" 2>/dev/null)" ]; }
 PGID=""
 teardown() {
   # Structurally refuse to signal anything but a genuine, specific group:
-  # empty (nothing launched), non-numeric (garbage), or exactly "1" (which
-  # `kill -- -1` would broadcast to every process this user can signal) are
-  # all rejected before a kill is ever attempted — not merely relying on
-  # `[ -n "$PGID" ]`, which says nothing about what a non-empty PGID
-  # actually contains.
+  # empty (nothing launched), non-numeric (garbage), exactly "1" (which
+  # `kill -- -1` would broadcast to every process this user can signal), or
+  # exactly "0" (`kill -- -0` targets the CALLER's own process group — i.e.
+  # this script's own) are all rejected before a kill is ever attempted —
+  # not merely relying on `[ -n "$PGID" ]`, which says nothing about what a
+  # non-empty PGID actually contains. "0" is unreachable in practice ($! is
+  # never 0), but rejecting it keeps the guard structurally exhaustive
+  # rather than relying on that being true.
   case "$PGID" in
-    ''|*[!0-9]*|1) return 0 ;;
+    ''|*[!0-9]*|1|0) return 0 ;;
   esac
   kill -TERM -- "-$PGID" 2>/dev/null
   local waited=0

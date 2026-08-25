@@ -309,3 +309,31 @@ t_assert_contains "$out" "pnpm-workspace.yaml" "the rc=2 failure names the file 
 t_assert_not_contains "$out" "applied — now run ONE root install" \
   "the applied line never prints after a hard write failure (I5b)"
 rm -rf "$repo10"
+
+# ── I3: a dead ncu/pnpm must never report "up to date" ──────────────────────
+# Deliberately does NOT set NJA_LATEST_STUB, so latest_version() takes the
+# live `pnpm view` path rather than the hermetic stub path — a stub MISS is
+# legitimately "no data, skip" (existing tests above rely on that), but a
+# broken TOOL is a genuine resolution failure and must never be folded into
+# "nothing to update". Fake `ncu`/`pnpm` shims on PATH stand in for a dead
+# registry/network without touching the real one.
+repo12="$(t_mkrepo)"
+bin12="$(mktemp -d -t nja-dswp-bin)"
+cat > "$bin12/ncu" <<'SH'
+#!/bin/sh
+exit 5
+SH
+cat > "$bin12/pnpm" <<'SH'
+#!/bin/sh
+exit 6
+SH
+chmod +x "$bin12/ncu" "$bin12/pnpm"
+
+t_assert_exit 1 "a dead ncu/pnpm never reports success, it exits 1 (I3)" -- \
+  env PATH="$bin12:$PATH" bash "$SWEEP" --root "$repo12" --dry-run
+out="$(env PATH="$bin12:$PATH" bash "$SWEEP" --root "$repo12" --dry-run 2>&1)"
+t_assert_not_contains "$out" "everything is already up to date" \
+  "a broken resolver is never reported as up-to-date (I3)"
+t_assert_contains "$out" "could not be resolved" \
+  "a broken resolver names the failure explicitly, not silently (I3)"
+rm -rf "$bin12" "$repo12"

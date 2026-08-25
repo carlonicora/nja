@@ -13,7 +13,10 @@
 #   0  pass — WARNs allowed (includes the report-only published-version
 #      drift check, a missing pnpm-workspace.yaml, and unresolvable links)
 #   1  a delegated repo script failed (scripts/check-dep-drift.js or
-#      scripts/sync-production-versions.js), or an argument/environment error
+#      scripts/sync-production-versions.js), an argument/environment error,
+#      or node_modules/.pnpm is missing — this doctor's contract is "run
+#      after every install", so a missing store means it was invoked too
+#      early rather than that there is nothing to find; run an install first
 #   2  duplicate resolution or readlink mismatch. Takes precedence over 1:
 #      when both a resolution problem and a delegated-script failure are
 #      present, exit 2 — a duplicate resolution is the more actionable
@@ -75,6 +78,7 @@ FAILED=0
 WARNED=0
 DELEGATED_FAILED=0
 LINKS_COMPARED=0
+STORE_SCANNED=0
 
 # pnpm encodes scoped names in .pnpm as "@scope+name@version"
 pnpm_dirname() { printf '%s\n' "$1" | sed 's|/|+|'; }
@@ -87,6 +91,7 @@ check_single_resolution() {
     WARNED=$((WARNED + 1))
     return 0
   fi
+  STORE_SCANNED=1
   for peer in $CRITICAL_PEERS; do
     enc="$(pnpm_dirname "$peer")"
     versions="$(ls "$store" 2>/dev/null \
@@ -244,8 +249,18 @@ if [ "$FAILED" -gt 0 ]; then
   nja_fail "$FAILED duplicate-resolution problem(s)"
   nja_say "  Fix: add an exact-version override for the package in pnpm-workspace.yaml,"
   nja_say "       then CI=true pnpm install --no-frozen-lockfile, then re-run this doctor."
-  nja_say "  Background: skills/nja-update-dependencies/references/hazards.md §1"
+  nja_say "  Background: nja-update-dependencies skill, references/hazards.md §1"
   exit 2
+fi
+
+# A missing node_modules/.pnpm means check_single_resolution scanned nothing
+# at all — not that nothing was found. This doctor's contract is "run after
+# every install", so that is an environment error, not a pass: fail loudly
+# (exit 1) rather than let an unscanned store read as a silent all-clear.
+if [ "$STORE_SCANNED" -eq 0 ]; then
+  nja_say ""
+  nja_fail "node_modules/.pnpm not found — nothing was scanned. Run an install, then re-run the doctor."
+  exit 1
 fi
 
 if [ "$DELEGATED_FAILED" -gt 0 ]; then
@@ -254,7 +269,11 @@ if [ "$DELEGATED_FAILED" -gt 0 ]; then
   exit 1
 fi
 
-nja_ok "one resolution per critical peer"
+# Gated the same way the link-agreement line below is gated: never print an
+# all-clear for a check that did not actually run. STORE_SCANNED is always 1
+# by this point (the STORE_SCANNED==0 case exits above) — kept explicit so
+# this line can never regress into an unconditional print again.
+[ "$STORE_SCANNED" -eq 1 ] && nja_ok "one resolution per critical peer"
 [ "$LINKS_COMPARED" -gt 0 ] && nja_ok "all workspace links agree"
 [ "$WARNED" -gt 0 ] && nja_warn "$WARNED warning(s)"
 exit 0

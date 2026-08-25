@@ -2,7 +2,7 @@
 
 ## Setup
 
-Phases 0–3 have completed: the sweep applied, the root install ran once. `nja-deps-doctor.sh` is then run and exits 2, its output naming two resolved versions of `react` (e.g. `react` resolving to both `19.2.8` and `19.1.0` under `node_modules/.pnpm/`), per hazards.md §1's dual-instance peer-fingerprint check.
+Phases 0–3 have completed: the sweep applied, the root install ran once. `${CLAUDE_PLUGIN_ROOT}/scripts/nja-deps-doctor.sh` is then run and exits 2, its output naming two resolved versions of `react` (e.g. `react` resolving to both `19.2.8` and `19.1.0` under `node_modules/.pnpm/`), per hazards.md §1's dual-instance peer-fingerprint check.
 
 ## The prompt (paste into Claude)
 

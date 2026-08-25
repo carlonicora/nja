@@ -139,6 +139,15 @@ t_assert_exit 1 "--root --help rejects the flag as its value" -- bash "$_ndb_boo
 # --timeout must additionally reject a non-integer value
 t_assert_exit 1 "non-integer --timeout exits 1" -- bash "$_ndb_boot" --timeout notanumber
 
+# regression (I4b): a bare trailing --timeout must not hang either. --timeout
+# is the one option with a SECOND guard stacked behind require_optarg's own
+# (the integer check just above, at nja-dev-boot.sh:104) — that makes its
+# no-hang path the least verified of the three value-taking options before
+# this test existed, and this is the documented CPU-spin bug's own option.
+# require_optarg must catch the bare trailing flag before the integer check
+# ever runs, exactly as it already does for --root above.
+_ndb_bounded_exit 1 "--timeout with no value exits 1, not a hang (I4b)" 30 -- bash "$_ndb_boot" --timeout
+
 # ── the bystander test ────────────────────────────────────────────────────────
 # An unrelated long-lived process, of exactly the kind a name-pattern kill
 # would destroy. It MUST survive. NJA_DEV_CMD spawns a fixture whose children
