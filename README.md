@@ -19,6 +19,7 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. |
 | **`nja-delegate-implementation`** | Handing a written plan to a fresh session to implement. Writes a temp markdown file that *is* the prompt for that session: `@`-links to the spec and plan, the context that dies with the conversation (session decisions, repo state, resolved commands), and the execution protocol — parallel task dispatch, no per-task tests, one lint/build/test at the end, `nja-verify` audit, no commits. |
 | **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. |
+| **`nja-update-dependencies`** | Updating or upgrading npm dependencies across the monorepo — root, apps, and `packages/*`. Sweeps all three surfaces (workspace manifests, pnpm `catalog:`, and concrete `overrides:` — `ncu` sees only the first), holds back the majors that break this stack, then verifies with lint, build, a real `pnpm dev` boot check, and tests. Leaves everything uncommitted for you to test and commit. |
 | **`nja-handoff`** | Ending a session whose work another agent will continue. Compacts the conversation into a handoff document (saved to the OS temp dir, sensitive data redacted) with a "suggested skills" section, referencing existing artifacts instead of duplicating them. |
 
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, and `nja-verify`
@@ -26,6 +27,12 @@ all invoke it and cite its reference docs.
 
 The plan-driven path runs `nja-writing-plan` → `nja-delegate-implementation` → (fresh
 session) → `nja-verify`.
+
+`nja-update-dependencies` ships three deterministic scripts — `nja-deps-sweep.sh`,
+`nja-deps-doctor.sh`, and `nja-dev-boot.sh` — in the same spirit as `nja-lint.sh`: grep-fast,
+zero-model-context checks the skill drives rather than reimplements. `nja-dev-boot.sh` tears
+the dev stack down by process group, never by name pattern — the same discipline `nja-lint`
+enforces for architecture, applied here to killing processes safely.
 
 ## Enforcement (hooks + linter)
 
