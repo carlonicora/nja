@@ -23,12 +23,18 @@
 #   NJA_DEV_CMD     command to launch (default: pnpm dev). Word-split.
 #   NJA_READY_API / NJA_READY_WEB / NJA_READY_WORKER   readiness regexes
 #                   (consumed by the Task 10 readiness poll loop)
+#   NJA_FORCE_TEARDOWN_FAIL   test-only: makes teardown_verified() report
+#                   failure (exit 4) even though the real teardown
+#                   succeeded, so that path can be exercised without a
+#                   process group that genuinely survives SIGKILL.
 #
 # Exit codes:
-#   0  booted and tore down cleanly
-#   1  precondition failure (port busy, usage)
-#   2  boot failed (timeout or fatal log pattern) — arrives in Task 10
-#   4  teardown unverified — SOMETHING MAY STILL BE RUNNING
+#   0    booted and tore down cleanly
+#   1    precondition failure (port busy, usage)
+#   2    boot failed (timeout or fatal log pattern) — arrives in Task 10
+#   4    teardown unverified — SOMETHING MAY STILL BE RUNNING (wins over
+#        any other pending exit code, including 130/143 below)
+#   130/143   interrupted by SIGINT/SIGTERM — teardown still ran first
 set -uo pipefail
 
 NJA_BOOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -143,7 +149,58 @@ teardown() {
   PGID=""
   return 0
 }
-trap 'teardown >/dev/null 2>&1' EXIT INT TERM
+
+# teardown_verified — the single place that decides whether the group is
+# confirmed gone, and the single place that reports (to stderr) when it is
+# not. Both the signal path below and finish() (Task 10) go through this, so
+# the "TEARDOWN UNVERIFIED" diagnostic and the exit-4 contract live in
+# exactly one place rather than being duplicated.
+#
+# NJA_FORCE_TEARDOWN_FAIL is a test-only override: a process group that
+# genuinely survives SIGKILL cannot be constructed portably in a test, so
+# this makes teardown_verified() REPORT failure regardless of teardown()'s
+# real outcome. teardown() itself still runs for real either way — this
+# never causes an actual stray process, only a forced diagnostic.
+teardown_verified() {
+  local was_pgid="$PGID" ok=0
+  teardown || ok=1
+  [ -n "${NJA_FORCE_TEARDOWN_FAIL:-}" ] && ok=1
+  if [ "$ok" -ne 0 ]; then
+    nja_fail "TEARDOWN UNVERIFIED — group $was_pgid may still be running"
+    nja_say "      Inspect: ps -o pid,pgid,args -g $was_pgid"
+    return 4
+  fi
+  return 0
+}
+
+# ── exit / signal handling ───────────────────────────────────────────────────
+# The EXIT trap is the only place teardown_verified() runs on a normal
+# return; it leaves a successful exit's code alone but a failed teardown
+# always wins — exit 4 overrides whatever was otherwise pending. Safe to run
+# more than once: teardown() clears PGID on success, so a second call from
+# here after on_signal has already torn down is a no-op.
+on_exit() {
+  teardown_verified
+  local td=$?
+  [ "$td" -eq 0 ] || exit "$td"
+}
+trap on_exit EXIT
+
+# INT/TERM must tear the group down AND terminate this script — without an
+# explicit exit here, bash resumes whatever was interrupted and the script
+# keeps running (measured: ~6.5s of continued execution after a SIGINT that
+# had already reaped the group). Task 10 appends a readiness poll loop right
+# after finish() below; without this fix, Ctrl-C during that loop would kill
+# the dev stack but leave the loop spinning against a dead log for up to
+# --timeout seconds. `trap - INT TERM` first so a second signal arriving
+# mid-teardown falls back to bash's default handling instead of re-entering
+# this function.
+on_signal() {
+  trap - INT TERM
+  exit "$1"
+}
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
 
 # ── preconditions ────────────────────────────────────────────────────────────
 for p in "$API_PORT" "$WEB_PORT"; do
@@ -169,19 +226,33 @@ PGID=$!
 set +m
 nja_say "  group:   $PGID"
 
+# ── settle ───────────────────────────────────────────────────────────────────
+# Task 9 has no readiness detection yet (Task 10 adds the NJA_READY_* poll
+# loop that calls finish() below). Without any pause here, this task's own
+# flow falls off the end of the script and the EXIT trap tears the group
+# down within roughly a millisecond of it being created — before a real dev
+# stack's own children even exist. This wait is deliberately generic (not
+# tied to any readiness pattern) and bounded: wait for $LOG to have any
+# content at all, up to ~5s, then proceed regardless, exactly like the rest
+# of this task's flow. It is not a substitute for Task 10's real check.
+SETTLE_WAITED=0
+while [ ! -s "$LOG" ] && [ "$SETTLE_WAITED" -lt 50 ]; do
+  sleep 0.1
+  SETTLE_WAITED=$((SETTLE_WAITED + 1))
+done
+
 # ── teardown and verify ──────────────────────────────────────────────────────
 # Task 10 appends the readiness poll loop after this point, and that loop is
 # what calls finish() — with 0 once NJA_READY_API/WEB/WORKER all match in
 # $LOG, or 2 on timeout / a fatal pattern. Until that loop exists, finish()
 # is defined but never invoked: this task's own flow simply falls off the
-# end of the script, and the EXIT trap above is what tears the group down.
+# end of the script, and the EXIT trap above is what tears the group down
+# (via the same teardown_verified() this function calls).
 finish() {
   local code="$1"
-  if ! teardown; then
-    nja_fail "TEARDOWN UNVERIFIED — group $PGID may still be running"
-    nja_say "      Inspect: ps -o pid,pgid,args -g $PGID"
-    exit 4
-  fi
+  teardown_verified
+  local td=$?
+  [ "$td" -eq 0 ] || exit "$td"
   local p
   for p in "$API_PORT" "$WEB_PORT"; do
     if port_busy "$p"; then

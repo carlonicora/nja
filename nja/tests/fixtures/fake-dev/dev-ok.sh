@@ -6,8 +6,11 @@
 # BSD/GNU netcat builds, and a fixture that silently fails to bind makes
 # every port assertion in the suite vacuous.
 set -uo pipefail
+# Reads the same env var names the script's own precondition/port checks
+# use (API_PORT, PORT — not WEB_PORT) so a non-default PORT doesn't leave
+# this fixture bound to the wrong port while the script checks another.
 API_PORT="${API_PORT:-13950}"
-WEB_PORT="${WEB_PORT:-13951}"
+WEB_PORT="${PORT:-13951}"
 
 bind_port() {
   python3 -c '
