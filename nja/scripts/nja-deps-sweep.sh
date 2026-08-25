@@ -131,8 +131,20 @@ latest_version() {
 is_rejected() {
   local pkg="$1" list="$2" item
   [ -n "$list" ] || return 1
+  # Glob-match, mirroring ncu's own -x semantics: `--reject '@nestjs/*'` must
+  # hold back the whole scope on every surface, not just the manifest surface
+  # (where ncu -x already glob-matches) — @nestjs lives in the catalog block.
+  # `read -ra` (not `for item in $list`) splits on IFS=',' WITHOUT subjecting
+  # each item to pathname expansion against the CWD, which a bare unquoted
+  # `for item in $list` would do for any item containing a glob character.
   local IFS=','
-  for item in $list; do [ "$item" = "$pkg" ] && return 0; done
+  local -a items
+  read -ra items <<< "$list"
+  for item in "${items[@]}"; do
+    case "$pkg" in
+      $item) return 0 ;;
+    esac
+  done
   return 1
 }
 
@@ -197,11 +209,19 @@ sweep_catalog() {
     [ -n "$lat" ] || continue
     new="$(reranged "$cur" "$lat")"
     [ "$new" = "$cur" ] && continue
+    if [ "$(semver_cmp "$new" "$cur")" = "-1" ]; then
+      # latest_version can legitimately report a version BELOW what is
+      # already pinned (a pin ahead of the registry's "latest" dist-tag,
+      # e.g. a prerelease/next build) — never let that resolve as a
+      # silent downgrade.
+      nja_warn "catalog $pkg: latest ($lat) is lower than the current $cur — skipping, not downgrading" >&2
+      continue
+    fi
     printf 'catalog\tpnpm-workspace.yaml\t%s\t%s\t%s\n' "$pkg" "$cur" "$new"
     if [ "$apply" -eq 1 ]; then
       write_yaml_version "$yaml" catalog "$pkg" "$new"
       wrc=$?
-      [ "$wrc" -ne 0 ] && return "$wrc"
+      if [ "$wrc" -ne 0 ]; then return "$wrc"; fi
     fi
   done <<EOF
 $(nja_yaml_entries "$yaml" catalog)
@@ -210,8 +230,16 @@ EOF
 
 # ── surface 3: overrides ─────────────────────────────────────────────────────
 # Highest declared range for a package across every workspace manifest.
+# A manifest can declare the floor two ways: a concrete range directly, or
+# (the common case in these repos) "catalog:" — a reference that must be
+# resolved back to the catalog block's own concrete value. This is the
+# literal dreamer @nestjs incident: every manifest said "catalog:", the real
+# floor (^11.1.28) lived only in pnpm-workspace.yaml's catalog: block, and a
+# declared_floor that stopped at "catalog:" found no floor and refused
+# nothing. workspace: and npm: are still ignored — neither carries a
+# comparable version.
 declared_floor() {
-  local root="$1" pkg="$2" ws manifest best="" r
+  local root="$1" pkg="$2" yaml="$root/pnpm-workspace.yaml" ws manifest best="" r cat_val
   while IFS= read -r ws; do
     manifest="$root/$ws/package.json"
     [ "$ws" = "." ] && manifest="$root/package.json"
@@ -219,9 +247,16 @@ declared_floor() {
     r="$(PKG="$pkg" node -e '
       const p = require(process.argv[1]);
       const v = (p.dependencies||{})[process.env.PKG] ?? (p.devDependencies||{})[process.env.PKG];
-      if (v && !/^(workspace|catalog|npm):/.test(v)) console.log(v);
+      if (v && !/^(workspace|npm):/.test(v)) console.log(v);
     ' "$manifest" 2>/dev/null)"
     [ -n "$r" ] || continue
+    case "$r" in
+      catalog:*)
+        cat_val="$(nja_yaml_entries "$yaml" catalog | awk -F'\t' -v p="$pkg" '$1 == p { print $2; exit }')"
+        [ -n "$cat_val" ] || continue
+        r="$cat_val"
+        ;;
+    esac
     if [ -z "$best" ] || [ "$(semver_cmp "$r" "$best")" = "1" ]; then best="$r"; fi
   done <<EOF
 $(nja_workspaces "$root")
@@ -240,6 +275,10 @@ sweep_overrides() {
     [ -n "$lat" ] || continue
     new="$(reranged "$cur" "$lat")"
     [ "$new" = "$cur" ] && continue
+    if [ "$(semver_cmp "$new" "$cur")" = "-1" ]; then
+      nja_warn "override $pkg: latest ($lat) is lower than the current $cur — skipping, not downgrading" >&2
+      continue
+    fi
 
     floor="$(declared_floor "$root" "$pkg")"
     if [ -n "$floor" ] && [ "$(semver_cmp "$new" "$floor")" = "-1" ]; then
@@ -252,7 +291,7 @@ sweep_overrides() {
     if [ "$apply" -eq 1 ]; then
       write_yaml_version "$yaml" overrides "$pkg" "$new"
       wrc=$?
-      [ "$wrc" -ne 0 ] && return "$wrc"
+      if [ "$wrc" -ne 0 ]; then return "$wrc"; fi
     fi
   done <<EOF
 $(nja_yaml_entries "$yaml" overrides)
