@@ -267,12 +267,25 @@ rm -rf "$repo9"
 # adding one is out of scope for this fix round) — accepted per this
 # project's existing precedent of leaving surface 1 non-hermetic (I3 above
 # explicitly defers the broader ncu-hermeticity problem).
+#
+# The catalog/overrides surfaces run in the SAME --apply invocation and are
+# NOT the thing under test here, so give them a stub with one irrelevant
+# line: matches nothing in the fixture's catalog/overrides blocks, so both
+# surfaces produce zero rows and make zero `pnpm view` calls, while the
+# manifest-surface FROM-column assertion below is untouched (the manifest
+# surface never consults NJA_LATEST_STUB). Kept OUTSIDE the fixture repo
+# (mktemp, not "$repo11/.latest") so it cannot pollute a git-status check —
+# the same reason every other stub-inside-the-repo case in this suite is
+# scoped rather than checked with a bare `git status`.
 repo11="$(t_mkrepo)"
+stub11="$(mktemp -t nja-dswp-stub11)"
+printf 'this-package-does-not-exist-anywhere\t0.0.0\n' > "$stub11"
 printf '{ "name": "fixture-api", "version": "1.0.0", "dependencies": { "lodash": "^4.0.0" } }\n' \
   > "$repo11/apps/api/package.json"
-out="$(bash "$SWEEP" --root "$repo11" --apply 2>&1)"
+out="$(NJA_LATEST_STUB="$stub11" bash "$SWEEP" --root "$repo11" --apply 2>&1)"
 t_assert_contains "$out" "^4.0.0" \
   "apply's report shows the pre-write FROM value, not the just-written one (I5a: dry-pass-first, manifest)"
+rm -f "$stub11"
 rm -rf "$repo11"
 
 # ── I5b: nja_yaml_set_version's rc=2 is fatal, exit 1, and names package+file ─
