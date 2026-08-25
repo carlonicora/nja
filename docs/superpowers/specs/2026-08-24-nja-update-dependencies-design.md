@@ -63,21 +63,37 @@ Guide §7.2 and §4.5 are ~12 shell commands (`ls node_modules/.pnpm | grep …`
 every run. They are 100% deterministic and belong in a script — the plugin
 already established this pattern with `scripts/nja-lint.sh`.
 
-### 1.4 There is a hazard nothing can currently detect
+### 1.4 A drift class nothing can currently detect
 
-`dreamer`'s `packages/nestjs-neo4jsonapi` submodule is 26 commits past its last
-tag (`pre-contextualiser-rework-26-g9a6a2e7`) while both its `package.json` and
-`versions.production.json` say `3.2.2`. The production Docker build substitutes
-`workspace:*` → npm `3.2.2` (`scripts/apply-production-versions.js`), so the
-image ships code that is **not** what the workspace builds and tests.
+The workspace builds and tests submodule **source**; the production Docker build
+substitutes `workspace:*` → the npm version pinned in `versions.production.json`
+(`scripts/apply-production-versions.js`). When a submodule's checked-out source
+sits ahead of the release tag matching its declared version, those two are
+different code and the image ships something the workspace never tested.
 
-Rule 5 of `scripts/check-dep-drift.js` compares `versions.production.json`
-against the workspace `package.json` version — both say `3.2.2`, so it passes.
-It is structurally unable to see this class of drift.
+Rule 5 of `scripts/check-dep-drift.js` is structurally unable to see this: it
+compares `versions.production.json` against the submodule's own
+`package.json` version — both hold the same number regardless of what the
+working tree contains.
 
-Relatedly: `phlow` is stranded on core libs `2.0.0` while the other five are on
-`3.2.2`/`3.3.9`, and `dreamer`'s catalog comment still reads *"nestjs-neo4jsonapi
-2.0.0 peer floors"* against an actual dependency of `3.2.2`.
+**Correction (2026-08-25):** an earlier draft of this spec cited `dreamer` as a
+live instance, reading `git submodule status`'s
+`pre-contextualiser-rework-26-g9a6a2e7` as "26 commits past its release tag".
+That was a misreading. `git submodule status` runs `git describe` **without**
+`--tags`, so it only considers *annotated* tags. These libraries tag releases
+with **lightweight** tags, so the nearest annotated tag is an unrelated old one.
+Checked directly, `v3.2.2` is a lightweight tag pointing at exactly `9a6a2e7`,
+which is `HEAD` — `git rev-list --count v3.2.2..HEAD` is `0`. **dreamer has no
+drift.** The check remains worth having for the class of problem, but it was not
+motivated by a real instance.
+
+This carries one hard implementation requirement: the check MUST use
+`git describe --tags`. A bare `git describe` would report the nearest annotated
+tag and false-positive on every one of these repos.
+
+Relatedly, and still true: `phlow` is on core libs `2.0.0` while the other five
+are on `3.2.2`/`3.3.9`, and `dreamer`'s catalog comment still reads
+*"nestjs-neo4jsonapi 2.0.0 peer floors"* against an actual dependency of `3.2.2`.
 
 ---
 
