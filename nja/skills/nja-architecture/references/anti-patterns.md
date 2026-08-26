@@ -10,7 +10,7 @@ related_docs:
   - backend-03-repositories
   - frontend-03-services
 enforcement: critical
-last_updated: "2026-08-24"
+last_updated: "2026-08-26"
 ---
 
 # Anti-Patterns (DON'T DO THIS)
@@ -58,6 +58,7 @@ Read this file when:
 | A `vi.mock` factory referencing a module-scope `const` | Vitest hoists the factory above it — "Cannot access before initialization" (use `vi.hoisted()`) |
 | `vi.importActual()` inside a non-`async` factory | `importActual` is async, unlike `jest.requireActual` |
 | `unplugin-swc` in a `vitest.config.ts` with no `oxc: false` | Oxc owns the transform; `decoratorMetadata` is not guaranteed, breaking reflection-resolved DI |
+| A content check on a valid LLM response that triggers `llm.call` again | Quality retry — banned; fix the schema/prompt, demote the check to a logged detector (see backend/06-llm-calls.md § "Retries — failures yes, quality never") |
 
 ---
 

@@ -14,7 +14,7 @@ related_docs:
   - backend-04-services
   - anti-patterns
 enforcement: critical
-last_updated: "2026-08-11"
+last_updated: "2026-08-26"
 ---
 
 # Backend: LLM Calls
@@ -66,6 +66,12 @@ Read this file when:
    call that fails should not always kill the request: catch, log a warning
    with the node name, and return the unenhanced result — but make that a
    conscious, documented choice, not a silent default.
+9. **Retry FAILURES, never QUALITY.** A retry is legitimate only when no
+   usable output exists: 429/5xx, a timeout, an empty response, a truncated
+   or schema-invalid emission. Re-calling because a gate disliked the
+   CONTENT of a valid output is banned — if the content is wrong, the
+   `inputSchema`, `outputSchema`, or prompt is weak, and THAT is what gets
+   fixed. See "Retries — failures yes, quality never" below.
 
 ---
 
@@ -82,6 +88,9 @@ Read this file when:
 >    `metadata.agentName`/`metadata.nodeName` set? If no, **STOP**.
 > 5. On a reasoning-capable model tier: is `reasoningEffort` a deliberate
 >    choice for THIS call? If it was inherited from another call, **STOP**.
+> 6. Does any code path re-issue this call because a check disliked the
+>    CONTENT of a valid response? If yes, **STOP** — turn the check into a
+>    logged detector and move its rule into the schema or prompt (rule 9).
 
 ---
 
@@ -123,6 +132,59 @@ Read this file when:
 
 ---
 
+## Retries — failures yes, quality never
+
+Two things wear the name "retry", and they must never be confused.
+
+**A FAILURE retry re-asks a question that was never answered.** The provider
+returned a 429 or a 5xx, the call timed out, the response was empty (no
+tokens, no finish reason), or the emission was truncated / failed schema
+decoding. No usable output exists; re-issuing the SAME input is correct,
+because the input was never the problem. Bound the attempts, log every one
+(a silently-absorbed empty response is how a provider outage hides for
+fourteen rounds), and fall through to the degraded path of rule 8 when the
+budget is spent.
+
+**A QUALITY retry re-rolls an answer someone disliked.** The call returned a
+valid, schema-conforming output; a gate inspected the content, judged it
+wrong (an echoed direction, a contradiction, a rule violation), and the code
+called the model again hoping for better. THIS IS BANNED. Same input, same
+model, same weak contract — the same class of output comes back, and the
+product pays twice for a lesson it refuses to learn. A quality gate that
+triggers a re-call is an admission, in code, that the schemas and the prompt
+do not hold — so fix THEM:
+
+- **Field contracts inline with the data.** A rule in a `.describe()` sits
+  next to the value it governs; a rule in the system prompt sits 2,000
+  tokens away and loses.
+- **Scaffold fields, in schema order.** Constrained decoding fills an object
+  in order: a required field placed BEFORE the answer forces the model to
+  articulate the constraint before it may commit (state the `condition`
+  before the verdict, name the one `act` before the direction). Measured:
+  the scaffold held 3/3 where the written prohibition held 1/3.
+- **Shapes that make the failure unrepresentable.** Required fields (an
+  optional field is a field the grammar cannot force), enums for closed
+  sets, flat array items, bounded arrays, explicit `maxTokens`.
+- **Code-side merges that survive a bad emission.** An omission carries
+  forward instead of deleting; a malformed section is dropped alone while
+  the others apply.
+
+**What becomes of the gate?** It survives as a DETECTOR: it logs the
+violation with the evidence, counts it as a degradation the operator can
+see, and ships the output anyway. The counter is the measurement the
+philosophy needs — a non-zero count says a contract is still weak, and the
+fix is the contract, never a second call. A detector that quietly re-rolls
+is not a detector; it is the weak prompt's life-support machine.
+
+**The boundary case:** an output that is structurally unusable — a required
+beat missing, an array short of its contract, an id that resolves to nobody
+— is a FAILURE (nothing downstream can consume it), and re-asking is
+legitimate. When such a retry re-issues the call, it carries the rejection
+back as a named negative example in the input ("beat 2 was empty") — a
+byte-identical re-ask teaches the model nothing.
+
+---
+
 ## COMMON MISTAKES
 
 | Mistake | Consequence | Correct approach |
@@ -135,6 +197,9 @@ Read this file when:
 | Missing attribution/metadata | Indistinguishable calls in dumps, unattributed spend | `tokenUsageType` + relationship + `metadata.agentName/nodeName` |
 | Economy `reasoningEffort` left on a quality-critical call | Rule-following and judgement degrade silently | Set the knob per call, on purpose |
 | Real tenant data as prompt examples | Leaks user content into every future call | Abstract examples only |
+| Re-calling because a gate disliked valid content | Pays twice for the same weak contract; the model returns the same class of output | Fix the schema/prompt (describes, scaffold fields, shapes); demote the gate to a logged, counted detector |
+| Swallowing failure retries silently | An empty-response streak or provider outage hides behind "eventual success" | Log and count every failure retry; bound attempts; degrade loudly (rule 8) |
+| Byte-identical re-ask after a structural rejection | The model repeats the mistake it was not told about | Carry the rejection back as a named negative example in the input |
 
 ---
 
