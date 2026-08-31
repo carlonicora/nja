@@ -136,7 +136,13 @@ env_value() {
 API_PORT="${API_PORT:-$(env_value API_PORT)}"; API_PORT="${API_PORT:-3950}"
 WEB_PORT="${PORT:-$(env_value PORT)}";          WEB_PORT="${WEB_PORT:-3951}"
 
-port_busy() { lsof -ti :"$1" -sTCP:LISTEN >/dev/null 2>&1; }
+# `-iTCP:PORT`, not `-i :PORT`: the bare form matches UDP bindings too, and
+# `-sTCP:LISTEN` does not filter them out. On macOS /usr/libexec/rapportd holds
+# UDP on assorted high ports, so a repo whose api port collided with one was
+# reported busy by a process that was not ours and the boot aborted (observed on
+# a 3722 api port, 2026-08-30). TCP-only is what "is a server listening here"
+# actually means.
+port_busy() { lsof -tiTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 group_alive() { [ -n "$(ps -o pid= -g "$1" 2>/dev/null)" ]; }
 
 # ── teardown — the only kill path in this script ─────────────────────────────
@@ -316,7 +322,13 @@ finish() {
 # not — a package-name-agnostic discriminator that holds across all six repos.
 NEST_READY='Nest application successfully started|Application is running on'
 NJA_READY_API="${NJA_READY_API:-$NEST_READY}"
-NJA_READY_WORKER="${NJA_READY_WORKER:-$NEST_READY}"
+# The worker does NOT print the api's ready line. A NestJS app started in worker
+# mode binds no HTTP server, so "Nest application successfully started" /
+# "Application is running on" never appear and worker readiness silently
+# degraded to a WARN on every repo in the fleet (observed in two repos,
+# 2026-08-30). These apps announce themselves with "Worker process started";
+# keep the api patterns as a fallback for repos whose worker does serve HTTP.
+NJA_READY_WORKER="${NJA_READY_WORKER:-Worker process started|$NEST_READY}"
 NJA_READY_WEB="${NJA_READY_WEB:-Ready in|started server on|Local:}"
 
 FATAL='UnknownDependenciesException|Cannot find module|ERR_MODULE_NOT_FOUND|ERR_PNPM_|UnhandledPromiseRejection'
