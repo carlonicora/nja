@@ -20,6 +20,7 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-delegate-implementation`** | Handing a written plan to a fresh session to implement. Writes a temp markdown file that *is* the prompt for that session: `@`-links to the spec and plan, the context that dies with the conversation (session decisions, repo state, resolved commands), and the execution protocol — parallel task dispatch, no per-task tests, one lint/build/test at the end, `nja-verify` audit, no commits. |
 | **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. |
 | **`nja-update-dependencies`** | Updating or upgrading npm dependencies across the monorepo — root, apps, and `packages/*`. Sweeps all three surfaces (workspace manifests, pnpm `catalog:`, and concrete `overrides:` — `ncu` sees only the first), holds back the majors that break this stack, then verifies with lint, build, a real `pnpm dev` boot check, and tests. Leaves everything uncommitted for you to test and commit. |
+| **`nja-update-fleet`** | Updating dependencies across **multiple** nja monorepos at once. Discovers every nja repo on the machine, computes one fleet-wide version set, sweeps and validates both shared libraries against every consumer *before* pushing, releases each library exactly once, then verifies every app with lint, build, tests and a serialized `pnpm dev` boot. Never commits an app repo. |
 | **`nja-handoff`** | Ending a session whose work another agent will continue. Compacts the conversation into a handoff document (saved to the OS temp dir, sensitive data redacted) with a "suggested skills" section, referencing existing artifacts instead of duplicating them. |
 
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, and `nja-verify`
@@ -137,6 +138,7 @@ nja/
     │   ├── nja-delegate-implementation/  # plan → prompt file for a fresh session
     │   ├── nja-verify/         # architecture audit
     │   ├── nja-update-dependencies/  # dependency sweep workflow + references/ + evals/
+    │   ├── nja-update-fleet/         # fleet sweep workflow + references/ + evals/
     │   └── nja-handoff/        # session → handoff document for the next agent
     └── tests/                  # bash test suite for scripts/*.sh (run.sh, lib.sh, fixtures/)
 ```

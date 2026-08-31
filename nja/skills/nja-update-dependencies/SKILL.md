@@ -7,6 +7,8 @@ description: Use when updating, upgrading, or sweeping npm dependencies in a nes
 
 Update every dependency surface of an nja monorepo — workspace manifests, the pnpm `catalog:` block, and `overrides:` — then verify the result with lint, build, a real `pnpm dev` boot, and tests. The sweep never commits: it leaves the working tree dirty with exactly the diff the user reviews and tests by hand before committing it themselves.
 
+**One repo only.** To upgrade several nja monorepos together — one decision round and ONE release of each shared library instead of one per app — use `nja-update-fleet` instead. Running this skill repo-by-repo across a fleet is what that skill exists to replace.
+
 The scripts this skill drives live in `${CLAUDE_PLUGIN_ROOT}/scripts/` — `${CLAUDE_PLUGIN_ROOT}` resolves to the installed plugin's root at runtime, never to a path inside the target monorepo.
 
 ## Core principle

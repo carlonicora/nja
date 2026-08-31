@@ -16,6 +16,10 @@
 #      resolve one or more packages (a dead registry, network, or auth
 #      problem) — reported explicitly, never folded into "up to date"
 #   3  refused to write an override that would lower a declared floor
+#   4  refused to rewrite a declared range that cannot accept its ledger
+#      target (a caret-less pin, or a tilde crossed at the minor). Widening
+#      a range is a decision, not a mechanical step. UNRELATED to
+#      nja-dev-boot.sh's exit 4, which means teardown was unverified.
 set -uo pipefail
 
 NJA_SWEEP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,6 +29,7 @@ NJA_SWEEP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLY=0
 ROOT=""
 REJECT=""
+LEDGER=""
 
 usage() {
   cat <<'USAGE'
@@ -34,6 +39,7 @@ nja-deps-sweep.sh [--dry-run | --apply] [--root <path>] [--reject <pkg,pkg,...>]
   --apply     write package.json files and pnpm-workspace.yaml
   --root      repo root (default: the enclosing git toplevel)
   --reject    comma-separated hold-backs; never bumped on any surface
+  --ledger    apply exactly this fleet ledger; never consults the registry
 USAGE
 }
 
@@ -68,6 +74,7 @@ while [ "$#" -gt 0 ]; do
     --apply)   APPLY=1; shift ;;
     --root)    require_optarg --root "$#" "${2:-}"; ROOT="$2"; shift 2 ;;
     --reject)  require_optarg --reject "$#" "${2:-}"; REJECT="$2"; shift 2 ;;
+    --ledger)  require_optarg --ledger "$#" "${2:-}"; LEDGER="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     *) printf 'unknown option: %s\n' "$1" >&2; usage >&2; exit 1 ;;
   esac
@@ -83,6 +90,110 @@ fi
 if [ ! -f "$ROOT/pnpm-workspace.yaml" ]; then
   nja_fail "no pnpm-workspace.yaml at $ROOT"
   exit 1
+fi
+
+# ── ledger mode ──────────────────────────────────────────────────────────────
+# Apply a version set computed ONCE for the whole fleet. Never consults the
+# registry — this branch returns before the ncu/pnpm checks below are even
+# reached. A 2-3 hour fleet run spans npm publishes, and re-deriving the
+# target per member is exactly how lockstep breaks silently.
+if [ -n "$LEDGER" ]; then
+  if [ ! -f "$LEDGER" ]; then
+    printf 'ledger not found: %s\n' "$LEDGER" >&2
+    exit 1
+  fi
+
+  # pkg<TAB>target, decision == "take" only.
+  TARGETS="$(node -e '
+    const l = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    for (const [pkg, e] of Object.entries(l.packages || {})) {
+      if (e && e.decision === "take" && e.target) console.log(pkg + "\t" + e.target);
+    }
+  ' "$LEDGER")" || { printf 'could not parse ledger: %s\n' "$LEDGER" >&2; exit 1; }
+
+  # Pass 1 — refuse before writing anything. A partially applied fleet is
+  # worse than an unapplied one: half the members move and the diff stops
+  # being reviewable.
+  REFUSED=""
+  while IFS="$(printf '\t')" read -r pkg target; do
+    [ -n "$pkg" ] || continue
+    for ws in $(nja_workspaces "$ROOT"); do
+      [ -f "$ROOT/$ws/package.json" ] || continue
+      declared="$(PKG="$pkg" node -e '
+        const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        const all = { ...(j.dependencies||{}), ...(j.devDependencies||{}) };
+        process.stdout.write(all[process.env.PKG] || "");
+      ' "$ROOT/$ws/package.json" 2>/dev/null)"
+      [ -n "$declared" ] || continue
+      nja_range_accepts "$declared" "$target" || \
+        REFUSED="$REFUSED$ws  $pkg  declared $declared  target $target
+"
+    done
+    # overrides ONLY, not catalog. Exactness means different things in the
+    # two blocks, and conflating them would freeze the fleet:
+    #   catalog:   exact versions are the NORM and carry no "hold" meaning —
+    #              react, react-dom, @types/react, next and react-hook-form
+    #              are all caret-less there precisely so the workspace
+    #              resolves to ONE copy. Refusing them would mean the fleet
+    #              could never take a routine React or Next bump.
+    #   overrides: an exact entry is a deliberate forced resolution, usually
+    #              with an incident comment beside it (bullmq 6.0.2: "api +
+    #              nestjs-neo4jsonapi pin 6.0.2 exactly"). Moving it silently
+    #              is the failure this check exists to prevent.
+    # The manifest loop above already applies the caret-less rule where
+    # scripts/update.sh states it — "a caret-less range in a manifest".
+    declared="$(nja_yaml_entries "$ROOT/pnpm-workspace.yaml" overrides \
+      | awk -F'\t' -v p="$pkg" '$1 == p { print $2 }')"
+    if [ -n "$declared" ]; then
+      nja_range_accepts "$declared" "$target" || \
+        REFUSED="$REFUSED""overrides  $pkg  declared $declared  target $target
+"
+    fi
+  done <<LEDGER_EOF
+$TARGETS
+LEDGER_EOF
+
+  if [ -n "$REFUSED" ]; then
+    nja_fail "refusing to widen a deliberate pin — nothing was written"
+    printf '%s' "$REFUSED" | while IFS= read -r r; do
+      [ -n "$r" ] && printf '      %s\n' "$r"
+    done
+    nja_say ""
+    nja_say "A caret-less range is a deliberate pin and a tilde is a deliberate"
+    nja_say "ceiling. Widening either is a decision: resolve it in the ledger"
+    nja_say "(set the package to \"hold\", or widen the range by hand) and re-run."
+    exit 4
+  fi
+
+  # Pass 2 — write. Every surface, exactly the ledger's targets.
+  while IFS="$(printf '\t')" read -r pkg target; do
+    [ -n "$pkg" ] || continue
+    for ws in $(nja_workspaces "$ROOT"); do
+      [ -f "$ROOT/$ws/package.json" ] || continue
+      PKG="$pkg" TARGET="$target" node -e '
+        const fs = require("fs"), p = process.argv[1];
+        const j = JSON.parse(fs.readFileSync(p, "utf8"));
+        let hit = false;
+        for (const sec of ["dependencies", "devDependencies"]) {
+          if (j[sec] && j[sec][process.env.PKG] !== undefined) {
+            const cur = String(j[sec][process.env.PKG]);
+            if (cur.startsWith("catalog:") || cur.startsWith("workspace:")) continue;
+            const caret = cur.startsWith("^") ? "^" : "";
+            j[sec][process.env.PKG] = caret + process.env.TARGET.replace(/^[\^~]/, "");
+            hit = true;
+          }
+        }
+        if (hit) fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+      ' "$ROOT/$ws/package.json" 2>/dev/null
+    done
+    nja_yaml_set_version "$ROOT/pnpm-workspace.yaml" catalog   "$pkg" "$target"
+    nja_yaml_set_version "$ROOT/pnpm-workspace.yaml" overrides "$pkg" "$target"
+    nja_ok "$pkg -> $target"
+  done <<LEDGER_EOF
+$TARGETS
+LEDGER_EOF
+
+  exit 0
 fi
 
 command -v ncu >/dev/null 2>&1 || { nja_fail "ncu (npm-check-updates) is not on PATH"; exit 1; }

@@ -186,3 +186,15 @@ t_assert_eq "$before" "$(cat "$yaml")" "the unwritable-directory (2) path leaves
 t_assert_eq "0" "$(find "$repo" -name '*.nja.tmp' | wc -l | tr -d ' ')" "the unwritable-directory (2) path leaves no stray temp file"
 
 rm -rf "$repo"
+
+# ── range acceptance ────────────────────────────────────────────────────────
+t_assert_exit 0 "caret accepts any target"          -- nja_range_accepts '^1.2.3' '1.9.0'
+t_assert_exit 0 "caret accepts a major jump"        -- nja_range_accepts '^1.2.3' '2.0.0'
+t_assert_exit 0 "tilde accepts same major.minor"    -- nja_range_accepts '~4.1.0' '4.1.9'
+t_assert_exit 1 "tilde refuses a minor jump"        -- nja_range_accepts '~4.1.0' '4.2.0'
+t_assert_exit 1 "tilde refuses a major jump"        -- nja_range_accepts '~4.1.0' '5.0.0'
+t_assert_exit 0 "exact pin accepts itself"          -- nja_range_accepts '6.0.2' '6.0.2'
+t_assert_exit 1 "exact pin refuses any move"        -- nja_range_accepts '6.0.2' '6.3.1'
+t_assert_exit 0 "catalog: is not this surface"      -- nja_range_accepts 'catalog:' '1.0.0'
+t_assert_exit 0 "workspace: is not this surface"    -- nja_range_accepts 'workspace:*' '1.0.0'
+t_assert_exit 0 "empty declared accepts"            -- nja_range_accepts '' '1.0.0'

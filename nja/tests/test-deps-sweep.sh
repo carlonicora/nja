@@ -337,3 +337,45 @@ t_assert_not_contains "$out" "everything is already up to date" \
 t_assert_contains "$out" "could not be resolved" \
   "a broken resolver names the failure explicitly, not silently (I3)"
 rm -rf "$bin12" "$repo12"
+
+# ── ledger mode ─────────────────────────────────────────────────────────────
+LSWEEP="$NJA_SCRIPTS_DIR/nja-deps-sweep.sh"
+repo="$(t_mkrepo)"
+ledger="$repo/ledger.json"
+
+cat > "$ledger" <<'JSON'
+{
+  "run": "2026-08-28",
+  "packages": {
+    "eslint":       { "target": "^9.40.0", "decision": "take" },
+    "react":        { "target": "19.3.0",  "decision": "take" },
+    "class-validator": { "target": "^0.16.0", "decision": "take" },
+    "framer-motion":{ "target": "^13.1.1", "decision": "hold" }
+  }
+}
+JSON
+
+t_assert_exit 0 "ledger mode applies cleanly" -- bash "$LSWEEP" --ledger "$ledger" --root "$repo"
+
+ws="$(cat "$repo/pnpm-workspace.yaml")"
+t_assert_contains "$ws" "eslint: ^9.40.0"          "catalog entry moved to the ledger target"
+t_assert_contains "$ws" "react: 19.3.0"            "catalog react moved to the ledger target"
+t_assert_contains "$ws" "class-validator: ^0.16.0" "overrides entry moved to the ledger target"
+t_assert_not_contains "$ws" "framer-motion"        "a held package is never written"
+t_assert_not_contains "$(bash "$LSWEEP" --ledger "$ledger" --root "$repo" 2>&1)" "ncu" "ledger mode never invokes ncu"
+
+rm -rf "$repo"
+
+# ── exit 4: a declared range that cannot accept its target ──────────────────
+repo="$(t_mkrepo)"
+ledger="$repo/ledger.json"
+cat > "$ledger" <<'JSON'
+{ "packages": { "bullmq": { "target": "6.3.1", "decision": "take" } } }
+JSON
+t_assert_exit 4 "an unwidenable pin exits 4" -- bash "$LSWEEP" --ledger "$ledger" --root "$repo"
+t_assert_contains "$(bash "$LSWEEP" --ledger "$ledger" --root "$repo" 2>&1)" "deliberate pin" "exit 4 explains why it refused"
+t_assert_contains "$(cat "$repo/pnpm-workspace.yaml")" "bullmq: 6.0.2" "nothing is written when it refuses"
+rm -rf "$repo"
+
+t_assert_exit 1 "a bare --ledger with no value exits 1" -- bash "$LSWEEP" --ledger
+t_assert_exit 1 "a missing ledger file exits 1" -- bash "$LSWEEP" --ledger /nonexistent/ledger.json --root "$(t_mkrepo)"

@@ -230,3 +230,35 @@ nja_yaml_set_version() {
   trap - INT TERM HUP
   return "$rc"
 }
+
+# ── range acceptance ─────────────────────────────────────────────────────────
+# nja_range_accepts <declared> <target> — can <declared> be mechanically
+# rewritten to <target>? Exit 0 accepts, 1 refuses.
+#
+#   ^X.Y.Z      always accepts. A caret range is an invitation to move.
+#   ~X.Y.Z      only within the same major.minor. A tilde is a deliberate
+#               ceiling; crossing it is a decision, not a sweep.
+#   X.Y.Z       only if identical. A CARET-LESS RANGE IS A DELIBERATE PIN —
+#               the rule of thumb recorded in every app's scripts/update.sh,
+#               learned the hard way. bullmq 6.0.2 is pinned on purpose.
+#   catalog: / workspace: / empty
+#               not this surface's business — the catalog surface governs
+#               those, so accept and let the caller skip.
+#
+# No semver dependency: this is string comparison on purpose. The repo has no
+# npm deps and this rule must hold identically in every member.
+nja_range_accepts() {
+  local declared="$1" target="$2" d t
+  case "$declared" in
+    ''|catalog:*|workspace:*) return 0 ;;
+    '^'*) return 0 ;;
+    '~'*)
+      d="$(printf '%s' "${declared#\~}" | cut -d. -f1,2)"
+      t="$(printf '%s' "${target#\~}"   | cut -d. -f1,2)"
+      [ "$d" = "$t" ] && return 0
+      return 1 ;;
+    *)
+      [ "$declared" = "$target" ] && return 0
+      return 1 ;;
+  esac
+}
