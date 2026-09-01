@@ -362,7 +362,27 @@ saw_fatal()  { grep -cE "$FATAL" "$LOG" 2>/dev/null | grep -qv '^0$'; }
 # to detect. Once api+web are both ready, the worker signal gets a short
 # grace window instead of the rest of --timeout; NJA_WORKER_GRACE is
 # overridable for a repo whose worker is just genuinely slower to boot.
-NJA_WORKER_GRACE="${NJA_WORKER_GRACE:-10}"
+#
+# The window is chosen from EVIDENCE rather than fixed, because the two cases it
+# has to separate are very different:
+#   - no `dev:worker` stream in the log at all -> the repo has no worker, so
+#     degrade fast (this is what the bound exists for).
+#   - a `dev:worker` stream IS present but has not signalled yet -> the worker
+#     really is booting, and 10s is nowhere near enough. MEASURED 2026-08-31 in
+#     only35: the api reported ready at 10:51:15.609 and the worker's own
+#     "Worker process started" landed at 10:51:55.202 — a 39.6s gap, because the
+#     worker compiles its own tsconfig and boots a second Nest graph. Every run
+#     there warned "worker readiness signal never matched" even though the
+#     worker was healthy and the pattern matched, purely because of this window.
+# A fixed window cannot bound the second case either: only35's worker loads ten
+# ML models before it signals, so how long it takes is a property of the machine,
+# not a constant. The window is therefore PROGRESS-BASED — every time the worker
+# stream emits a new line the deadline is pushed out again, so "slow but alive"
+# keeps waiting while "stuck and silent" still degrades promptly. --timeout
+# remains the hard ceiling.
+# An explicit NJA_WORKER_GRACE always wins over all of it.
+NJA_WORKER_GRACE_NO_STREAM=10
+NJA_WORKER_GRACE_QUIET=45
 
 api_ok=0; web_ok=0; worker_ok=0; waited=0; worker_deadline=""
 while [ "$waited" -lt "$TIMEOUT" ]; do
@@ -382,7 +402,19 @@ while [ "$waited" -lt "$TIMEOUT" ]; do
   [ "$api_ok" -eq 1 ] && [ "$web_ok" -eq 1 ] && [ "$worker_ok" -eq 1 ] && break
 
   if [ "$api_ok" -eq 1 ] && [ "$web_ok" -eq 1 ] && [ "$worker_ok" -eq 0 ]; then
-    [ -z "$worker_deadline" ] && worker_deadline=$((waited + NJA_WORKER_GRACE))
+    _wlines=$(grep -cE ':dev:worker:' "$LOG" 2>/dev/null || echo 0)
+    if [ -n "${NJA_WORKER_GRACE:-}" ]; then
+      _grace="$NJA_WORKER_GRACE"
+    elif [ "$_wlines" -gt 0 ]; then
+      _grace="$NJA_WORKER_GRACE_QUIET"
+    else
+      _grace="$NJA_WORKER_GRACE_NO_STREAM"
+    fi
+    # a new worker line means it is still booting: push the deadline out again
+    if [ -z "$worker_deadline" ] || [ "$_wlines" -gt "${worker_lines_seen:-0}" ]; then
+      worker_lines_seen="$_wlines"
+      worker_deadline=$((waited + _grace))
+    fi
     [ "$waited" -ge "$worker_deadline" ] && break
   fi
 
