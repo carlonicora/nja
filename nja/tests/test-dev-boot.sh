@@ -110,6 +110,24 @@ _ndb_boot_bounded() {
   done
   [ -z "$pg" ] && pg="$(awk '/^  group:/ { print $2 }' "$out" 2>/dev/null)"
   [ -z "$lg" ] && lg="$(awk '/^  log:/ { print $2 }' "$out" 2>/dev/null)"
+  # The bound can expire in the window between the script LAUNCHING the dev
+  # command (its fixture has already bound the ports) and it PRINTING the
+  # "group:" line. Reaping with an empty pgid there is a no-op, so the kill -9
+  # below hits only the wrapper and ORPHANS the group — which keeps the fixture
+  # holding the ports and makes every subsequent run of this suite fail I4's
+  # port precondition. That is a coin flip on machine load, and it is why this
+  # suite appeared to fail intermittently. Never force-terminate blind: if the
+  # process is alive but has not announced its group yet, wait (bounded) for the
+  # announcement so there is always something to reap.
+  if kill -0 "$pid" 2>/dev/null && [ -z "$pg" ]; then
+    local extra=0
+    while kill -0 "$pid" 2>/dev/null && [ -z "$pg" ] && [ "$extra" -lt 100 ]; do
+      sleep 0.1
+      pg="$(awk '/^  group:/ { print $2 }' "$out" 2>/dev/null)"
+      [ -z "$lg" ] && lg="$(awk '/^  log:/ { print $2 }' "$out" 2>/dev/null)"
+      extra=$((extra + 1))
+    done
+  fi
   if kill -0 "$pid" 2>/dev/null; then
     _ndb_reap_group "$pg"
     kill -9 "$pid" 2>/dev/null

@@ -402,7 +402,13 @@ while [ "$waited" -lt "$TIMEOUT" ]; do
   [ "$api_ok" -eq 1 ] && [ "$web_ok" -eq 1 ] && [ "$worker_ok" -eq 1 ] && break
 
   if [ "$api_ok" -eq 1 ] && [ "$web_ok" -eq 1 ] && [ "$worker_ok" -eq 0 ]; then
-    _wlines=$(grep -cE ':dev:worker:' "$LOG" 2>/dev/null || echo 0)
+    # `grep -c` PRINTS "0" and EXITS 1 when it matches nothing, so `|| echo 0`
+    # appended a second zero and made this "0\n0" — every later [ -gt ] on it
+    # then died with "integer expression expected" and silently evaluated false,
+    # which also broke the progress check below. Keep grep's own count; default
+    # only when grep produced nothing at all (no log file yet).
+    _wlines=$(grep -cE ':dev:worker:' "$LOG" 2>/dev/null || true)
+    _wlines=${_wlines:-0}
     if [ -n "${NJA_WORKER_GRACE:-}" ]; then
       _grace="$NJA_WORKER_GRACE"
     elif [ "$_wlines" -gt 0 ]; then
@@ -410,6 +416,15 @@ while [ "$waited" -lt "$TIMEOUT" ]; do
     else
       _grace="$NJA_WORKER_GRACE_NO_STREAM"
     fi
+    # A grace window longer than the --timeout it lives inside can never degrade
+    # early: the loop just burns the whole budget, which is precisely the
+    # "indistinguishable from a hang" failure this window exists to prevent.
+    # Cap it at half the budget so the WARN is always reached well inside
+    # --timeout. At the 180s default the cap is 90s, so the measured 45s worker
+    # case above is untouched; this only binds when the caller asked for a short
+    # timeout (and an explicit NJA_WORKER_GRACE is capped too — a window it is
+    # impossible to reach is not an override worth honouring).
+    [ "$_grace" -gt $((TIMEOUT / 2)) ] && _grace=$((TIMEOUT / 2))
     # a new worker line means it is still booting: push the deadline out again
     if [ -z "$worker_deadline" ] || [ "$_wlines" -gt "${worker_lines_seen:-0}" ]; then
       worker_lines_seen="$_wlines"
