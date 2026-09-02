@@ -46,6 +46,8 @@ Read this file when:
 | `fetch('/api/...')` | Using fetch() directly |
 | `overridesJsonApiCreation: true` | Bypassing model validation |
 | `asChild`, `<DialogContent>` as single component, `<Sub>` | Using Radix API — this project uses Base UI |
+| `blocksToText(...)`, `paragraphBlocks(...)`, any blocks↔text converter | Duplicates the BlockNote editor — display with `BlockNoteEditorContainer`, test emptiness with `onEmptyChange` (see [frontend/06-blocknote.md](frontend/06-blocknote.md)) |
+| A plain `<Input>` feeding a rich-text (`description`/`content`/`notes`) field | The blocks array is the only representation — collect it with an editor |
 | `<PopoverTrigger><Button>` or trigger wrapping Button | Nested `<button>` — hydration error |
 | `someDate: { type: "string" }` for a calendar field | Storing a date as a String — Cypher temporal ops break (see [date-handling.md](date-handling.md)) |
 | `SET n.due_date = $due_date` in custom Cypher | Bypasses framework cast — stores a String (use `date(left($v, 10))`) |
@@ -159,6 +161,8 @@ async find(params: { cursor: JsonApiCursorInterface }): Promise<Gallery[]> {
 | Accessing `data.jsonApi.data.*` directly | Bypasses type system | Use typed getters after rehydrate |
 | Using Radix patterns (`asChild`, Radix naming) | Base UI uses different API | See [frontend/04-components.md](frontend/04-components.md) |
 | Wrapping `<Button>` inside trigger components | Nested `<button>` — invalid HTML | Use `render` prop or styled `<div>` inside trigger |
+| Converting a BlockNote value to/from a string in app code | The editor already does it; the string form exists only on the wire | `BlockNoteEditorContainer` to display, `onEmptyChange` for emptiness — see [frontend/06-blocknote.md](frontend/06-blocknote.md) |
+| Writing a new component that already exists in the package or a named reference repo | Visual/structural drift across the fleet the user must later reconcile | Grep first; copy a named reference verbatim and propose any deviation before writing it |
 | Passing raw `Date` to `createJsonApi()` for a `"date"` field | `JSON.stringify` calls `.toISOString()` — UTC shift loses a day west of UTC | Wrap in `formatLocalDate(d)` — see [date-handling.md](date-handling.md) |
 | Returning the wire string from a `Date` getter (no `new Date(...)` in rehydrate) | Type lie — getter signature is `Date` but value is `string` | `new Date(data.jsonApi.attributes.foo)` in `rehydrate()` |
 | Typing a date getter as `string` in the interface | Loses temporal semantics; consumers can't compare or format | `get foo(): Date \| undefined` |

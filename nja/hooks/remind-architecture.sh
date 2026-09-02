@@ -71,7 +71,7 @@ case "$REL" in
   apps/web/src/features/*/data/*.ts)
     DOC="references/frontend/01-models.md" ;;
   apps/web/src/features/*/components/*|apps/web/src/features/*/*.tsx)
-    DOC="references/frontend/04-components.md (+ references/frontend/05-typography.md if the edit styles text)" ;;
+    DOC="references/frontend/04-components.md (+ references/frontend/05-typography.md if the edit styles text, + references/frontend/06-blocknote.md if it touches a rich-text field)" ;;
   apps/web/src/features/*)
     DOC="references/frontend/ (pick the file-role doc: models/interfaces/services/components); see SKILL.md routing table" ;;
 

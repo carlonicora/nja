@@ -39,8 +39,8 @@ If the task is to create a NEW entity (backend or frontend), use the full-chain 
 | `apps/web/src/features/*/data/*Interface.ts` | `references/frontend/02-interfaces.md` → `references/date-handling.md` (if any getter is `Date`) |
 | `apps/web/src/features/*/data/*Service.ts` | `references/frontend/03-services.md` → `references/anti-patterns.md` |
 | `apps/web/src/features/*/data/*.ts` (other) | `references/frontend/01-models.md` → `references/date-handling.md` (if `rehydrate()` or `createJsonApi()` touches a date/datetime) |
-| `apps/web/src/features/*/components/**` (or `**/*.tsx` under features) | `references/frontend/04-components.md` → `references/frontend/05-typography.md` (if the edit styles text) |
-| Creating a NEW frontend entity (full chain) | `references/core-principles.md` → `references/frontend/02-interfaces.md` → `references/frontend/01-models.md` → `references/frontend/03-services.md` → `references/frontend/04-components.md` → `references/frontend/05-typography.md` → `references/frontend/template.md` → `references/date-handling.md` (if any field is a date/datetime) |
+| `apps/web/src/features/*/components/**` (or `**/*.tsx` under features) | `references/frontend/04-components.md` → `references/frontend/05-typography.md` (if the edit styles text) → `references/frontend/06-blocknote.md` (if the file touches a rich-text field: `description`, `content`, `notes`) |
+| Creating a NEW frontend entity (full chain) | `references/core-principles.md` → `references/frontend/02-interfaces.md` → `references/frontend/01-models.md` → `references/frontend/03-services.md` → `references/frontend/04-components.md` → `references/frontend/05-typography.md` → `references/frontend/template.md` → `references/date-handling.md` (if any field is a date/datetime) → `references/frontend/06-blocknote.md` (if any field is rich text) |
 
 ### Shared packages
 
@@ -125,6 +125,27 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 - Frontend `createJsonApi()` MUST use `formatLocalDate(d)` (imported from `@carlonicora/nextjs-jsonapi/core` — never re-implemented inline) for `type: "date"` fields, and `d.toISOString()` for `type: "datetime"` fields
 - Full lifecycle and verification checklist: `references/date-handling.md`
 
+## Reuse before you write
+
+Before writing ANY new component, helper, or utility under `apps/web/src/features`
+or `packages/*/src`:
+
+1. **Grep first** — `apps/web/src`, then `packages/nextjs-jsonapi/src`. Reuse with
+   props. A near-match adapted through props beats a new file every time.
+2. **A named reference is a SPEC, not an example.** When the user points at another
+   repo (`~/Development/neural-erp`, a sibling nja monorepo) or at existing code,
+   copy it VERBATIM — the step indicator, the footer, the layout — and adapt only
+   the data. These repos are deliberately kept identical; a hand-rolled variant is
+   drift the user has to hunt down across every repo.
+3. **Deviations are proposed, never assumed.** If you believe the reference is
+   wrong for this case, say so and get a yes BEFORE writing the alternative.
+   Borrowing a reference's logic while silently redesigning its presentation is
+   the most common form of this failure.
+4. **Existing usage is not proof of correctness.** A helper committed by an earlier
+   session can itself be the duplication. Check it against the package and the
+   reference repo before extending it — and when it is wrong, delete it and fix
+   its callers rather than adding a caller.
+
 ## How to use this skill
 
 1. Identify the file you are about to edit.
@@ -153,4 +174,5 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 | `references/frontend/03-services.md` | AbstractService, callApi(), EndpointCreator |
 | `references/frontend/04-components.md` | Base UI patterns (NOT Radix), render prop, trigger composition |
 | `references/frontend/05-typography.md` | Typography roles: one Tailwind recipe per text role, color tokens, header-markup rules |
+| `references/frontend/06-blocknote.md` | BlockNote rich-text fields: model conversion, display, editing, emptiness — and the converters never to write |
 | `references/frontend/template.md` | Copy-paste template for new frontend entities |
