@@ -54,6 +54,16 @@ If the task is to create a NEW entity (backend or frontend), use the full-chain 
 
 Read `references/anti-patterns.md` first, then the layer-specific reference for the file under review.
 
+### Cross-cutting (any file)
+
+| Situation | Read |
+|---|---|
+| About to report work as done, fixed, or passing | `references/discipline.md` §1 Prove it works |
+| Debugging anything | `references/discipline.md` §2 Fix root causes |
+| Designing a type, an entity descriptor, or a signature | `references/discipline.md` §3 Type system discipline |
+| Writing the same instruction or correction a second time | `references/discipline.md` §4 Encode lessons in structure |
+| Working in a worktree, or alongside another session | `references/discipline.md` §5 Separate before serialising shared state |
+
 ## Non-negotiable rules (mirror of root CLAUDE.md guardrails)
 
 > The canonical copy of these rules lives in the repository root `CLAUDE.md`. This is a survival summary in case CLAUDE.md context was compacted away. If anything here conflicts with `CLAUDE.md`, `CLAUDE.md` wins.
@@ -159,6 +169,7 @@ or `packages/*/src`:
 |---|---|
 | `references/core-principles.md` | Foundational rules: JSON:API compliance, type safety, security defaults |
 | `references/anti-patterns.md` | Common mistakes and how to avoid them |
+| `references/discipline.md` | Cross-cutting working discipline: prove it works, fix root causes, type discipline, encode lessons in structure, separate shared state |
 | `references/date-handling.md` | Cross-cutting: date/datetime native-storage contract, end-to-end (descriptor → DTO → repository → model) |
 | `references/decisions.md` | Architecture Decision Records — why patterns exist |
 | `references/feature-template.md` | Feature handbook template |

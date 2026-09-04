@@ -1,7 +1,7 @@
 {
   "name": "nja",
-  "version": "1.17.0",
-  "description": "Skills for building apps with nestjs-neo4jsonapi + nextjs-jsonapi: architecture rules, module generators, diagram import, plan writing, implementation delegation, architecture audits, dependency sweeps, session handoffs, fleet-wide dependency upgrades, pre-release gates, and e2e test authoring",
+  "version": "1.18.0",
+  "description": "Skills for building apps with nestjs-neo4jsonapi + nextjs-jsonapi: architecture rules, module generators, diagram import, plan writing, implementation delegation, architecture audits, dependency sweeps, session handoffs, fleet-wide dependency upgrades, pre-release gates, e2e test authoring, app verification skills, blast-radius analysis, adversarial review, and session reflection",
   "author": {
     "name": "carlonicora"
   },

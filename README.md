@@ -22,12 +22,27 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-update-dependencies`** | Updating or upgrading npm dependencies across the monorepo — root, apps, and `packages/*`. Sweeps all three surfaces (workspace manifests, pnpm `catalog:`, and concrete `overrides:` — `ncu` sees only the first), holds back the majors that break this stack, then verifies with lint, build, a real `pnpm dev` boot check, and tests. Leaves everything uncommitted for you to test and commit. |
 | **`nja-update-fleet`** | Updating dependencies across **multiple** nja monorepos at once. Discovers every nja repo on the machine, computes one fleet-wide version set, sweeps and validates both shared libraries against every consumer *before* pushing, releases each library exactly once, then verifies every app with lint, build, tests and a serialized `pnpm dev` boot. Never commits an app repo. |
 | **`nja-handoff`** | Ending a session whose work another agent will continue. Compacts the conversation into a handoff document (saved to the OS temp dir, sensitive data redacted) with a "suggested skills" section, referencing existing artifacts instead of duplicating them. |
+| **`nja-e2e`** | Adding end-to-end coverage for a page or route. Two passes: the Given/When/Then list you review as prose, then the Playwright specs that satisfy it. |
+| **`nja-pre-release`** | Before releasing or handing back. Drives `pnpm lint`, `pnpm build` and `pnpm test` to green, then runs the full e2e suite and proposes fixes for what it reports. |
+| **`nja-create-verifier`** | A repo has no scripted way to prove UI or API behaviour. Generates a project-local `verify-<app>` skill plus a feature map, then proves it by running it once. Stops you being the test harness. |
+| **`nja-maintain-verifier`** | Keeping a generated `verify-<app>` skill and its feature map honest as the app changes. Parallel source readers per feature, one live session driving every feature, one batch of proven corrections. |
+| **`nja-blast-radius`** | Before a shared-package change, or any diff whose effects reach past itself. Finds the breakage grep won't show across the other nja apps, then *proves* the one fact the change is safe because of by running code. |
+| **`nja-interrogate`** | Adversarial review of a diff, spec, or plan. Several independent reviewers, one synthesised verdict split into act on / consider / noted / dismissed. Never auto-applies. |
+| **`nja-reflect`** | After a session where the same correction had to be given twice. Three parallel reviewers mine the transcript for durable learnings and route each to a concrete skill or reference edit — you approve before anything is written. |
+| **`nja-unslop`** | Any prose an agent produces: reports, docs, commit messages, handoffs. Cuts the AI tells. |
 
-`nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, and `nja-verify`
-all invoke it and cite its reference docs.
+`nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, `nja-verify`,
+`nja-interrogate` and `nja-reflect` all invoke it and cite its reference docs. Its
+`references/discipline.md` carries the cross-cutting rules that are not about this stack:
+prove it works, fix root causes, type discipline, encode lessons in structure, and
+separating shared state when several sessions share one tree.
 
 The plan-driven path runs `nja-writing-plan` → `nja-delegate-implementation` → (fresh
 session) → `nja-verify`.
+
+The proof path runs `nja-create-verifier` once per repo, then `nja-blast-radius` before a
+package release and `nja-interrogate` on anything you don't trust yet. `nja-reflect` closes
+the loop afterwards.
 
 `nja-update-dependencies` ships three deterministic scripts — `nja-deps-sweep.sh`,
 `nja-deps-doctor.sh`, and `nja-dev-boot.sh` — in the same spirit as `nja-lint.sh`: grep-fast,
@@ -137,6 +152,14 @@ nja/
     │   ├── nja-writing-plan/   # plan-writing wrapper
     │   ├── nja-delegate-implementation/  # plan → prompt file for a fresh session
     │   ├── nja-verify/         # architecture audit
+    │   ├── nja-e2e/            # Given/When/Then list → Playwright specs
+    │   ├── nja-pre-release/    # lint/build/test gates + e2e
+    │   ├── nja-create-verifier/    # generates a project-local verify-<app> skill
+    │   ├── nja-maintain-verifier/  # keeps that skill and its feature map honest
+    │   ├── nja-blast-radius/   # what a change breaks outside its own diff
+    │   ├── nja-interrogate/    # multi-reviewer adversarial review + references/
+    │   ├── nja-reflect/        # session → skill edits + references/
+    │   ├── nja-unslop/         # cut AI tells from any prose
     │   ├── nja-update-dependencies/  # dependency sweep workflow + references/ + evals/
     │   ├── nja-update-fleet/         # fleet sweep workflow + references/ + evals/
     │   └── nja-handoff/        # session → handoff document for the next agent
@@ -145,4 +168,5 @@ nja/
 
 ## License
 
-MIT
+MIT. Parts of this plugin are adapted from [pstack](https://github.com/cursor/plugins/tree/main/pstack)
+(MIT, Copyright (c) 2026 Lauren Tan) — see [`THIRD_PARTY.md`](THIRD_PARTY.md).
