@@ -8,10 +8,13 @@ Parts of this plugin are adapted from **pstack**, a Cursor plugin by Lauren Tan.
 - Vendored from commit `195d9359bdc2890f83745df69927528ad4538406`
 - Licence: MIT
 
-pstack targets Cursor. Every file below was ported to Claude Code (`Agent` in place of
-`Task`, `~/.claude/` paths in place of `~/.cursor/`, `superpowers:writing-skills` in place
-of Cursor's built-in `create-skill`, Anthropic model names) and adapted to the
-nestjs-neo4jsonapi + nextjs-jsonapi stack.
+pstack targets Cursor. The SKILL.md files below were rewritten for Claude Code (`Agent`
+in place of `Task`, `Explore` in place of `readonly: true`, `~/.claude/` paths in place of
+`~/.cursor/`, `superpowers:writing-skills` in place of Cursor's built-in `create-skill`,
+Anthropic model names) and adapted to the nestjs-neo4jsonapi + nextjs-jsonapi stack.
+
+The reference files were vendored as copies and then patched for the same substitutions.
+They are not verbatim upstream — use the diff recipe below to see exactly what changed.
 
 ### Skills adapted
 
@@ -72,6 +75,14 @@ SOFTWARE.
 To diff against upstream later:
 
 ```bash
-curl -sL https://github.com/cursor/plugins/archive/195d9359bdc2890f83745df69927528ad4538406.tar.gz | tar xz
-diff -ru plugins-195d*/pstack/skills/interrogate/references nja/skills/nja-interrogate/references
+# Extract outside the repo — the tarball is 3.4 MB and is not gitignored here.
+TMP=$(mktemp -d) && curl -sL https://github.com/cursor/plugins/archive/195d9359bdc2890f83745df69927528ad4538406.tar.gz | tar xz -C "$TMP"
+U="$TMP"/plugins-195d*/pstack/skills
+
+diff -ru $U/interrogate/references              nja/skills/nja-interrogate/references
+diff -ru $U/reflect/references                  nja/skills/nja-reflect/references
+diff -ru $U/create-verification-skill/references/feature-map-example \
+         nja/skills/nja-create-verifier/references/feature-map-example
+
+rm -rf "$TMP"
 ```

@@ -108,7 +108,7 @@ Concretely, in this repo:
 - **Work in the worktree you were given.** Editing the main checkout instead of the worktree has cost real hours. Confirm with `pwd` and `git branch --show-current` before the first edit.
 - **Commit only your own files.** Another session is very likely editing the same tree. Never `git add -A`.
 - **Never revert, stash, reset or force-push.** Uncommitted changes in the tree may be the user's, not a previous agent's.
-- **Never kill a process by name.** No `pkill -f node`, no `killall node`, no `pkill -f "next dev"`. Several projects run identical command lines on this machine and a name-pattern kill destroys unrelated work. Kill by PID, or by port: `lsof -ti :<port> -sTCP:LISTEN | xargs -r kill`. Verify the target belongs to this repo first.
+- **Never kill a process by name.** No `pkill -f node`, no `killall node`, no `pkill -f "next dev"`. Several projects run identical command lines on this machine and a name-pattern kill destroys unrelated work. Kill by PID, or by port: `lsof -tiTCP:<port> -sTCP:LISTEN | xargs -r kill`. The bare `lsof -ti :<port>` form also matches UDP holders that `-sTCP:LISTEN` does not filter — `nja-pre-release` records that correction and `nja-dev-boot.sh` uses the right form. Verify the target belongs to this repo first.
 - **Do not start or stop a dev server without being asked.** Check the port; if something answers, drive it.
 
 ---

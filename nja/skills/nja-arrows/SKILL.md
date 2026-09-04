@@ -59,4 +59,4 @@ Decide by querying the repo — never by node colour, position, or any visual cu
 ## Reference
 
 - `references/arrows-mapping.md` — exact parse rules: caption→names, `properties`→fields, type normalization table, edge ownership/direction, alias detection, ordering.
-- `nja-generate`'s `references/schema-reference.md` — the target `structure/*.json` schema (do not duplicate it).
+- `nja-generate`'s `references/arrows-mapping.md` — the target `structure/*.json` schema (do not duplicate it).

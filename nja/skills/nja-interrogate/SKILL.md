@@ -1,6 +1,7 @@
 ---
 name: nja-interrogate
 description: Use for "interrogate", "adversarial review", "second opinion", "challenge this", "stress test this", "find blind spots", "tear this apart", or before committing to a spec or plan you do not fully trust. Spawns several independent reviewers over the same diff or document and returns one synthesised verdict, split into act on / consider / noted / dismissed.
+disable-model-invocation: true
 ---
 
 # Interrogate
@@ -16,7 +17,13 @@ Agreement across reviewers is high-confidence signal. A lone finding is worth re
 Identify what to review:
 
 - If the user points at specific files, a diff, or a spec/plan document, use that.
-- If on a worktree branch, run `git diff dev...HEAD` for the full changeset. In an nja repo the base is `dev`, not `master`.
+- If on a branch, diff against the repo's real base — **detect it, never assume it.** The apps are on `dev`, both libraries on `master`, this plugin on `main`:
+  ```bash
+  BASE=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+  BASE=${BASE:-$(for b in dev main master; do git show-ref -q --verify "refs/heads/$b" && echo "$b" && break; done)}
+  git diff "$BASE...HEAD"
+  ```
+- If the work is uncommitted — the normal state in these repos, since nothing is committed before the user has tested — review `git diff HEAD` plus untracked files, not a branch range.
 - If the user's message references recent work, gather the relevant files.
 
 Package the diff or document plus any surrounding context files the reviewers need.
@@ -29,19 +36,23 @@ Write one clear paragraph. Reviewers challenge whether the work achieves the int
 
 ## Step 3: spawn reviewers
 
-Launch all reviewers in **one message** so they run in parallel. Use the `Agent` tool with `subagent_type: "general-purpose"`.
+Launch all reviewers in **one message** so they run in parallel. Use the `Agent` tool with `subagent_type: "Explore"` — reviewers must not be able to write. Upstream specifies `readonly: true` for the same reason; `Explore` is this harness's read-only agent.
 
 Default to **four reviewers on `opus`**. Diversity of model family is not available here, so buy independence a different way: each reviewer gets an identical prompt and no sight of the others, and you weight a finding by how many reviewers reached it alone.
 
 Where the user has another model available and asks for it, use it for at least one reviewer. Genuine cross-family disagreement is worth more than a fourth same-model opinion.
 
-Read `references/reviewer-prompt.md` and fill in the template with:
+Read `references/reviewer-prompt.md` and fill every slot it declares:
 
-1. The stated intent.
-2. The diff or file contents.
-3. The review rubric from `references/rubric.md`.
-4. The code-quality lens from `references/code-quality-review.md`.
-5. **For any nja code:** the `nja-architecture` skill, named as required reading. A reviewer who has not read it will miss the violations that matter most here — `fetch()` in the frontend, `overridesJsonApiCreation`, raw `neo4j.read()`, `query.query +=`, dates stored as strings, app-specific code leaking into a shared package, a hand-rolled component where one exists in `nextjs-jsonapi`.
+| Slot | Fill with |
+|---|---|
+| `{INTENT}` | The stated intent from step 2. |
+| `{DIFF_OR_FILES}` | The diff or file contents from step 1. |
+| `{REQUIRED_READING}` | For any nja code, the `nja-architecture` skill named as required reading, plus `references/discipline.md`. A reviewer who has not read them misses the violations that matter most here: `fetch()` in the frontend, `overridesJsonApiCreation`, raw `neo4j.read()`, `query.query +=`, dates stored as strings, app-specific code leaking into a shared package, a hand-rolled component where one already exists in `nextjs-jsonapi`. |
+| `{RUBRIC_CONTENTS}` | `references/rubric.md`. |
+| `{CODE_QUALITY_CONTENTS}` | `references/code-quality-review.md`. |
+
+Every slot the template declares must be filled. A slot you skip silently drops that content from every reviewer.
 
 The same filled template goes to every reviewer.
 

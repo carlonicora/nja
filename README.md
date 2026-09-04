@@ -148,7 +148,10 @@ nja/
     │   ├── nja-deps-lib.sh         # sourced helpers for the deps scripts below
     │   ├── nja-deps-sweep.sh       # dependency sweep (manifests + catalog + overrides)
     │   ├── nja-deps-doctor.sh      # post-install duplicate-resolution checks
-    │   └── nja-dev-boot.sh         # boot/verify/tear down a real `pnpm dev`
+    │   ├── nja-dev-boot.sh         # boot/verify/tear down a real `pnpm dev`
+    │   ├── nja-fleet-lib.sh        # sourced helpers for the fleet scripts
+    │   ├── nja-fleet-survey.sh     # discovers the nja repos on this machine
+    │   └── nja-fleet-waves.sh      # runs a staged command across the fleet
     ├── skills/
     │   ├── nja-architecture/   # routing table + references/ + evals/
     │   ├── nja-generate/       # generator workflow + references/
@@ -174,4 +177,4 @@ nja/
 ## License
 
 MIT. Parts of this plugin are adapted from [pstack](https://github.com/cursor/plugins/tree/main/pstack)
-(MIT, Copyright (c) 2026 Lauren Tan) — see [`THIRD_PARTY.md`](THIRD_PARTY.md).
+(MIT, Copyright (c) 2026 Lauren Tan) — see [`nja/THIRD_PARTY.md`](nja/THIRD_PARTY.md).

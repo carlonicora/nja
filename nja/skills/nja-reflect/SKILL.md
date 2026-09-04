@@ -1,6 +1,7 @@
 ---
 name: nja-reflect
 description: Use when the user says "reflect", "/nja-reflect", "what did you get wrong", "how do we stop this happening again", or after a session where the same correction had to be given more than once. Spawns three parallel reviewers over the session transcript, surfaces durable learnings, and routes each one to a concrete edit on an existing skill or reference doc — with the user approving before anything is written.
+disable-model-invocation: true
 ---
 
 # Reflect
@@ -23,18 +24,19 @@ Skip when the conversation is trivial, off-topic, or already covered by a skill 
 
 ### 1. Locate the active transcript
 
-Transcripts live at `~/.claude/projects/<slug>/<uuid>.jsonl`, where `<slug>` is the working directory with every `/` turned into `-`. `/Users/carlo/Development/nja` becomes `-Users-carlo-Development-nja`.
+Transcripts live at `~/.claude/projects/<slug>/<uuid>.jsonl`. The slug is the working directory with **both `/` and `.`** replaced by `-`. The dot matters: a worktree at `/Users/x/Development/wyrdli/.claude/worktrees/ai` becomes `-Users-x-Development-wyrdli--claude-worktrees-ai`, so replacing only `/` resolves to a directory that does not exist and every worktree session silently falls through.
 
 ```bash
-SLUG=$(pwd | tr '/' '-')
+SLUG=$(pwd | tr '/.' '--')
+ls -td "$HOME/.claude/projects/$SLUG" 2>/dev/null || echo "NO TRANSCRIPT DIR for $SLUG"
 ls -t "$HOME/.claude/projects/$SLUG/"*.jsonl 2>/dev/null | head -5
 ```
 
-Order by real modification time, never by the UUID in the filename. For each candidate, read the first line and check that its content holds this conversation's opening prompt. Take the matching path.
+Order by real modification time, never by the UUID in the filename. The first line of a transcript is a `{"type":"last-prompt",...}` header, **not** a message — to identify the right file, find the first line whose `"type"` is `"user"` and compare that against this conversation's opening prompt.
 
 Read only this project's transcripts. Do not glob across `~/.claude/projects/*/` — that reads unrelated sessions from other repos.
 
-If no path resolves, write a tight digest of the session and pass that to the reviewers instead.
+**If no path resolves, say so out loud and stop.** Do not quietly fall back to writing a digest from your own recollection: a reflection built on what you remember rather than what happened is exactly the self-report `nja-architecture`'s `references/discipline.md` §1 forbids. Ask the user for the transcript path, or run with an explicitly-labelled digest only if they say to.
 
 ### 2. Spawn three reviewers in parallel
 
@@ -56,7 +58,7 @@ One `Agent` call, `subagent_type: "general-purpose"`, `model: "opus"`. Use `refe
 
 Sanity-check the Accepted list. Any item that would be enforced more reliably by a lint rule, a script, a hook, an entity-descriptor constraint, or a runtime check moves from Accepted to Backlog — the fix is the mechanism, not more prose.
 
-This is `references/discipline.md` in the `nja-architecture` skill, "Encode lessons in structure", applied to this skill's own output. A rule an agent has to remember is a rule an agent will skip.
+This is the `nja-architecture` skill's `references/discipline.md` §4, "Encode lessons in structure", applied to this skill's own output. A rule an agent has to remember is a rule an agent will skip.
 
 ### 5. Apply — after approval
 
@@ -84,7 +86,7 @@ For a substantive edit — a new section, a new table, more than about ten lines
 Short list, no preamble:
 
 - **Applied:** `<path>`. What changed, one line each.
-- **Backlog:** the structural fixes worth building, one line each, written to `docs/reflect-backlog.md` so they are not lost.
+- **Backlog:** the structural fixes worth building, one line each. Offer to append them to `docs/reflect-backlog.md`; that file is a write like any other and waits for the same yes as the rest.
 - **Dropped:** one line per rejected finding plus the reason.
 
 ---

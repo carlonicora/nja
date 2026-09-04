@@ -1,6 +1,7 @@
 ---
 name: nja-blast-radius
 description: Use before a change to a shared package (nestjs-neo4jsonapi, nextjs-jsonapi, shared) or any edit whose effects reach past its own diff — "blast radius of X", "what could this break", "will this break the other apps", "is this safe to release", or reviewing a small diff you do not trust yet. Finds the breakage grep will not show, then proves the one fact the change is safe because of by running code.
+disable-model-invocation: true
 ---
 
 # Blast radius
@@ -11,7 +12,9 @@ Listing the callers is not the job. An agent can grep those in a second. The job
 
 ## Why this matters more here than in a normal repo
 
-`nestjs-neo4jsonapi` and `nextjs-jsonapi` are consumed by every nja app: `a360ai`, `wyrdli`, `neural-erp`, `only35`, `dreamer`, `adhstudy`, and `create-carlonicora-app`'s template. A package change is released once and pulled by all of them. There is no staging step between "commit" and "six apps are on the new version".
+`nestjs-neo4jsonapi` and `nextjs-jsonapi` are consumed by every nja app on this machine. A package change is released once and pulled by all of them, with no staging step between "commit" and "every app is on the new version".
+
+**Discover the consumers; never hardcode them.** Run `scripts/nja-fleet-survey.sh` (the same discovery `nja-update-fleet` uses — its header is explicit that the roster is rediscovered on every invocation, never stored in a skill). A list written into this file is stale the day a repo is added or retired.
 
 So a package diff is never done when the package's own tests pass. It is done when you can say what it does to the consumers, and prove the load-bearing part of that claim by running code.
 
@@ -45,7 +48,7 @@ Any safety fact you cannot get to step 4, say so out loud. Do not write it up as
    - **Cypher built by the framework.** `buildDefaultMatch()`, `{CURSOR}`, `initQuery()` serialisers. A change here silently alters company filtering, which is a security boundary.
    - **Neo4j stored shapes.** A date written as a string once stays wrong in the database after the code is fixed.
    - **Peer versions and the pnpm workspace.** Which apps are pinned to which package version right now.
-   - **The consumer repos themselves.** Grep `~/Development/{a360ai,wyrdli,neural-erp,only35,dreamer,adhstudy}` for the symbol. A search that finds nothing is still an answer.
+   - **The consumer repos themselves.** Grep every repo the survey returned for the symbol. A search that finds nothing is still an answer.
 
 4. **Be honest about each risk.** Give it a real chance of happening and a real cost if it does. Keep the risks you confirmed; list the ones you checked and cleared separately. Cite a real `file:line`, and never invent a caller or an API.
 

@@ -1,6 +1,7 @@
 ---
 name: nja-maintain-verifier
 description: Use to keep an existing project-local verify-<app> skill and its feature map honest as the app changes — "audit the verify skill", "the feature map is stale", "does the verifier still match the app", or a periodic pass over a repo whose verification skill was generated a while ago. Reads every feature from source in parallel, drives every feature live, and proposes one batch of proven corrections.
+disable-model-invocation: true
 ---
 
 # Maintain a verification skill
@@ -36,7 +37,7 @@ One session drives every feature through the harness the skill names — `playwr
 
 Do not fan this out. Concurrent drivers on one instance corrupt each other's state, and the ports are shared. One session, feature by feature.
 
-Check first with `lsof -i :<port>` and drive whatever is already running rather than restarting it. Never kill by process name.
+Check first with `lsof -iTCP:<port> -sTCP:LISTEN` and drive whatever is already running rather than restarting it. Never kill by process name.
 
 ## 4. Reconcile
 

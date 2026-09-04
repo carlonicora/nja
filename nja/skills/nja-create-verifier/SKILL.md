@@ -1,6 +1,7 @@
 ---
 name: nja-create-verifier
 description: Use when a repo has no scripted way to prove UI or API behaviour by driving the real app — "make a verification skill", "make a control skill for this repo", "give me a way to prove this works before I test it", or when the user is being asked to hand-test something an agent could have driven itself. Generates a project-local verify-<app> skill plus a feature map, then proves it by running it once.
+disable-model-invocation: true
 ---
 
 # Create a verification skill
@@ -16,12 +17,12 @@ You write the generator's output for the next agent, not for a human. It will be
 In an nja monorepo you can skip most of the interview. Assume, then confirm against the repo:
 
 - **Surface:** the Next.js web app (`apps/web`) is primary; the NestJS API (`apps/api`) is the secondary surface worth driving directly for data assertions.
-- **Run:** `pnpm dev` from the repo root. The web app answers on `http://<app>.test:34xx`, the API on `http://api.<app>.test:33xx`. Read the real ports from `.env` and `apps/*/package.json`; never guess them.
-- **Drive:** **`playwright-cli`**, never the Playwright library and never a browser MCP. Load the page twice and the session is already logged in. Take the credentials from the user once and record them in the generated skill so nobody asks again.
+- **Run:** `pnpm dev` from the repo root. **Read the ports; never assume them.** `API_PORT` in the repo-root `.env` is the API port and the web port is `API_PORT + 1`; `APP_URL` and `NEXT_PUBLIC_API_URL` give the real hosts, which do not follow one pattern (a360ai serves `avvocato360.test`, not its repo name).
+- **Drive:** **`playwright-cli`**, never the Playwright library and never a browser MCP. Load the page twice and the session is already logged in. Ask the user for credentials once, then record in the generated skill **only where they live** — the `.env` variable names, or `.env.e2e` — never the values. `.claude/` is tracked in these repos, so a credential written into the generated skill is a credential committed.
 - **Observe:** screenshots, the API's JSON:API response bodies, Cypher against Neo4j, and `docker compose` service logs.
-- **Isolate:** worktrees run their own ports. Check what is already listening with `lsof -i :<port>` before starting anything.
+- **Isolate:** worktrees run their own ports. Check what is already listening with `lsof -iTCP:<port> -sTCP:LISTEN` before starting anything.
 
-**Never kill by process name.** No `pkill -f node`, no `killall node`. Several projects run on this machine with identical command lines. Kill only what this run started, by PID, or by port with `lsof -ti :<port> -sTCP:LISTEN | xargs -r kill`.
+**Never kill by process name.** No `pkill -f node`, no `killall node`. Several projects run on this machine with identical command lines. Kill only what this run started, by PID, or by port with `lsof -tiTCP:<port> -sTCP:LISTEN | xargs -r kill` (the bare `-ti :<port>` form also matches UDP holders — see `nja-pre-release`).
 
 **Never start or stop a dev server the user is using.** Check first, and if something is already up on the port, drive that instead of restarting it.
 
@@ -31,7 +32,7 @@ Answer these from the codebase and ask only what you cannot observe:
 
 - **Surface:** what does a user actually touch? Confirm the nja defaults above against this repo.
 - **Run:** the repo's own documented dev command. Note ports, env vars, seed data, auth.
-- **Drive:** existing harnesses first. This repo probably already has `apps/web/playwright.config.ts` and specs under `e2e/`; read them for the selectors and login flow that already work rather than inventing new ones.
+- **Drive:** existing harnesses first. Specs live under `apps/web/tests/` when the repo has them, with `apps/web/tests/README.md` as the authority (`nja-e2e` owns that map). Read the existing selectors and login flow rather than inventing new ones. Not every repo has a suite — check before assuming one.
 - **Observe:** what evidence can be captured? Screenshots, response bodies, Cypher results, logs, exit codes.
 - **Isolate:** can two instances run side by side? If not, say so in the generated skill. Refusing to double-drive a shared instance beats corrupting the user's session.
 

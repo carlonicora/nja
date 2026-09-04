@@ -1,6 +1,7 @@
 ---
 name: nja-automate-me
 description: Use ONLY when explicitly asked — "automate me", "/nja-automate-me", "create/update my mode skill", "capture how I work as a skill", "turn my preferences into a skill". Mines the user's own transcripts, memories and CLAUDE.md files for recurring working conventions, asks a few structured questions, and writes or revises one personal <handle>-mode skill that agents follow. Never invoke this on your own initiative.
+disable-model-invocation: true
 ---
 
 # Automate me
@@ -62,7 +63,7 @@ find ~/Development -maxdepth 3 -name CLAUDE.md -not -path '*/node_modules/*' | x
 
 A line appearing in five or more repos is a confirmed convention.
 
-**c. The transcripts.** `~/.claude/projects/<slug>/<uuid>.jsonl`, where `<slug>` is a directory path with every `/` turned into `-`.
+**c. The transcripts.** `~/.claude/projects/<slug>/<uuid>.jsonl`, where `<slug>` is a directory path with **both `/` and `.`** replaced by `-` (`tr '/.' '--'` — replacing only `/` misses every worktree).
 
 **Mine every project, not just this one.** This is a deliberate departure from the upstream skill, which scopes mining to one workspace to avoid reading unrelated people's private chats. That rationale does not apply here: every project belongs to the same person, on their own machine, and a mode skill that only saw one repo would miss most of how they work.
 
