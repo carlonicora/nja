@@ -23,6 +23,7 @@ nestjs-neo4jsonapi + nextjs-jsonapi stack.
 | `nja-blast-radius` | `blast-radius` |
 | `nja-interrogate` | `interrogate` |
 | `nja-unslop` | `unslop` |
+| `nja-automate-me` | `automate-me` |
 
 ### Reference files vendored
 
@@ -31,6 +32,9 @@ Copied with only the Cursor-specific paths changed:
 - `nja-interrogate/references/` — `reviewer-prompt.md`, `rubric.md`, `code-quality-review.md`, `lead-judgment.md`
 - `nja-reflect/references/` — `judgment-reviewer.md`, `tooling-reviewer.md`, `divergent-reviewer.md`, `synthesizer.md`
 - `nja-create-verifier/references/feature-map-example/` — `README.md`, `search.md`, `create-note.md`
+
+`nja-automate-me/references/known-patterns.md` and `mode-skill-shape.md` are original to this
+plugin, not vendored.
 
 ### Sections adapted
 

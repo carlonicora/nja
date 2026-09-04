@@ -29,6 +29,7 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-blast-radius`** | Before a shared-package change, or any diff whose effects reach past itself. Finds the breakage grep won't show across the other nja apps, then *proves* the one fact the change is safe because of by running code. |
 | **`nja-interrogate`** | Adversarial review of a diff, spec, or plan. Several independent reviewers, one synthesised verdict split into act on / consider / noted / dismissed. Never auto-applies. |
 | **`nja-reflect`** | After a session where the same correction had to be given twice. Three parallel reviewers mine the transcript for durable learnings and route each to a concrete skill or reference edit — you approve before anything is written. |
+| **`nja-automate-me`** | Explicitly asked only. Mines your transcripts, auto-memories and CLAUDE.md files for how you actually work, asks a few structured questions, and writes one personal `<handle>-mode` skill to `~/.claude/skills/` — outside this plugin, because it describes a person, not a stack. |
 | **`nja-unslop`** | Any prose an agent produces: reports, docs, commit messages, handoffs. Cuts the AI tells. |
 
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, `nja-verify`,
@@ -43,6 +44,9 @@ session) → `nja-verify`.
 The proof path runs `nja-create-verifier` once per repo, then `nja-blast-radius` before a
 package release and `nja-interrogate` on anything you don't trust yet. `nja-reflect` closes
 the loop afterwards.
+
+`nja-automate-me` is run once per person, not per repo. Its output lives in
+`~/.claude/skills/<handle>-mode/`, and `nja-reflect` keeps that output current.
 
 `nja-update-dependencies` ships three deterministic scripts — `nja-deps-sweep.sh`,
 `nja-deps-doctor.sh`, and `nja-dev-boot.sh` — in the same spirit as `nja-lint.sh`: grep-fast,
@@ -159,6 +163,7 @@ nja/
     │   ├── nja-blast-radius/   # what a change breaks outside its own diff
     │   ├── nja-interrogate/    # multi-reviewer adversarial review + references/
     │   ├── nja-reflect/        # session → skill edits + references/
+    │   ├── nja-automate-me/    # your working style → a <handle>-mode skill + references/
     │   ├── nja-unslop/         # cut AI tells from any prose
     │   ├── nja-update-dependencies/  # dependency sweep workflow + references/ + evals/
     │   ├── nja-update-fleet/         # fleet sweep workflow + references/ + evals/
