@@ -67,8 +67,7 @@ detection — not the presence of a `test:e2e` script.
 > dashboard that serves a page and waits for a human to click Run; it spawns
 > `scripts/e2e.sh` underneath. Call `scripts/e2e.sh` directly.
 
-As of 2026-08-31: a360ai and neural-erp have one; wyrdli, only35 and dreamer do
-not. Detect, do not assume — repos gain e2e suites.
+Detect, do not assume — repos gain e2e suites.
 
 ```bash
 ./scripts/e2e.sh          # streams its own [api] [worker] [web] logs

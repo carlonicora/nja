@@ -1,5 +1,16 @@
 # Arrows.app → structure JSON mapping
 
+## Contents
+
+- Arrows shape (input)
+- Nodes → modules
+- Properties → fields (nodes AND relationships)
+- Relationships → relationships
+- Foundation detection
+- Existing detection
+- Generation order
+- Worked example (one node)
+
 How to translate a `{ nodes, relationships, style }` Arrows export into the `structure/<module>.json` shape that `nja-generate` consumes. Target schema: `nja-generate`'s `references/schema-reference.md` (authoritative — do not duplicate it here).
 
 ## Arrows shape (input)

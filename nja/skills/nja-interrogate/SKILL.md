@@ -1,6 +1,6 @@
 ---
 name: nja-interrogate
-description: Use for "interrogate", "adversarial review", "second opinion", "challenge this", "stress test this", "find blind spots", "tear this apart", or before committing to a spec or plan you do not fully trust. Spawns several independent reviewers over the same diff or document and returns one synthesised verdict, split into act on / consider / noted / dismissed.
+description: Use for "interrogate", "adversarial review", "second opinion", "challenge this", "stress test this", "find blind spots", "tear this apart", or before committing to a spec or plan not yet fully trusted. Spawns several independent reviewers over the same diff or document and returns one synthesised verdict, split into act on / consider / noted / dismissed.
 disable-model-invocation: true
 ---
 

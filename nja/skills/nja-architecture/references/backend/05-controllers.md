@@ -16,6 +16,19 @@ last_updated: "2026-03-01"
 
 # Backend: Controllers
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- HANDLER FACTORIES
+- DECLARATIVE DECORATORS
+- DECISION MATRIX
+- COMMON MISTAKES
+- RELATED FILES
+- Controller Pattern
+- Custom Endpoint Patterns
+- Error Handling
+
 ---
 
 ## WHEN TO USE

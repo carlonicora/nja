@@ -1,5 +1,12 @@
 # Failure playbook
 
+## Contents
+
+- Gate 1 — `pnpm lint`
+- Gate 2 — `pnpm build`
+- Gate 3 — `pnpm test`
+- e2e — diagnose, never fix
+
 What the three fast gates actually fail with in this stack, and what each
 failure means. Every entry here is a failure that was observed and diagnosed,
 not a category invented for completeness.

@@ -1,5 +1,13 @@
 # Working discipline
 
+## Contents
+
+- 1. Prove it works
+- 2. Fix root causes
+- 3. Type system discipline
+- 4. Encode lessons in structure
+- 5. Separate before serialising shared state
+
 Five cross-cutting rules. They are not about this stack — they are about how work gets done in it. Read them when you are about to claim something is finished, when you are about to fix a bug, when you are designing a type, when you are writing an instruction for the second time, or when more than one agent is working in the same tree.
 
 The architecture rules stop you writing the wrong code. These stop you shipping the wrong work.

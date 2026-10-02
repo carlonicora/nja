@@ -1,6 +1,6 @@
 ---
 name: nja-blast-radius
-description: Use before a change to a shared package (nestjs-neo4jsonapi, nextjs-jsonapi, shared) or any edit whose effects reach past its own diff — "blast radius of X", "what could this break", "will this break the other apps", "is this safe to release", or reviewing a small diff you do not trust yet. Finds the breakage grep will not show, then proves the one fact the change is safe because of by running code.
+description: Use before a change to a shared package (nestjs-neo4jsonapi, nextjs-jsonapi, shared) or any edit whose effects reach past its own diff — "blast radius of X", "what could this break", "will this break the other apps", "is this safe to release", or reviewing a small diff not yet trusted. Finds the breakage grep will not show, then proves the one fact the change is safe because of by running code.
 disable-model-invocation: true
 ---
 

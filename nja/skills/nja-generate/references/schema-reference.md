@@ -1,5 +1,13 @@
 # Structure JSON schema reference
 
+## Contents
+
+- Module-level fields
+- Field definitions (`fields[]`)
+- Relationship definitions (`relationships[]`)
+- Example 1 — simple (a `Location` under crm)
+- Example 2 — complex (an `Opportunity`-style module with edge fields + alias + derived field)
+
 The generators read a JSON **array** of module definitions from `structure/<domain>.json`.
 Both the backend (`generate-module`) and frontend (`generate-web-module`) read the
 same file; fields not relevant to one side are ignored by that side.

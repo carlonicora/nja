@@ -15,6 +15,24 @@ last_updated: "2026-03-01"
 
 # Frontend: New Entity Template (Copy-Paste Ready)
 
+## Contents
+
+- WHEN TO USE
+- COMPLEXITY TIERS
+- DECISION MATRIX
+- Directory Structure
+- Step 1: Interface (Simple)
+- Step 2: Input Type (Simple)
+- Step 3: Model (Simple)
+- Step 4: Service (Simple)
+- Step 5: Register in Modules
+- Interface (Medium) - Add edge property interface
+- Input Type (Medium) - Add array relationships
+- Model (Medium) - Add _readIncludedWithMeta
+- Model (Complex) - Add dedicated relationship methods
+- Service (Complex) - Add relationship methods
+- Checklist
+
 ---
 
 ## WHEN TO USE

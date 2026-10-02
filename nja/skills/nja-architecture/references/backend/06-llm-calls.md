@@ -19,6 +19,17 @@ last_updated: "2026-08-26"
 
 # Backend: LLM Calls
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- ENFORCEMENT CHECKPOINT
+- DECISION MATRIX
+- Retries — failures yes, quality never
+- COMMON MISTAKES
+- RELATED FILES
+- The canonical call
+
 ---
 
 ## WHEN TO USE

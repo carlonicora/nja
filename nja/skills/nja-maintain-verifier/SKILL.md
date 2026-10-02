@@ -1,6 +1,6 @@
 ---
 name: nja-maintain-verifier
-description: Use to keep an existing project-local verify-<app> skill and its feature map honest as the app changes — "audit the verify skill", "the feature map is stale", "does the verifier still match the app", or a periodic pass over a repo whose verification skill was generated a while ago. Reads every feature from source in parallel, drives every feature live, and proposes one batch of proven corrections.
+description: Use to keep an existing project-local verify-APP skill and its feature map honest as the app changes — "audit the verify skill", "the feature map is stale", "does the verifier still match the app", or a periodic pass over a repo whose verification skill was generated a while ago. Reads every feature from source in parallel, drives every feature live, and proposes one batch of proven corrections.
 disable-model-invocation: true
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: nja-arrows
-description: Use when generating feature modules from an Arrows.app diagram or any Neo4j-style entity-relationship JSON (a `{nodes, relationships, style}` export) in a nestjs-neo4jsonapi + nextjs-jsonapi monorepo. Triggers include "generate modules from this diagram", "import the arrows/ER JSON", "scaffold from <name>.json", or turning a graph data-model export into modules.
+description: Use when generating feature modules from an Arrows.app diagram or any Neo4j-style entity-relationship JSON (a `{nodes, relationships, style}` export) in a nestjs-neo4jsonapi + nextjs-jsonapi monorepo. Triggers include "generate modules from this diagram", "import the arrows/ER JSON", "scaffold from NAME.json", or turning a graph data-model export into modules.
 ---
 
 # Generate modules from an Arrows.app diagram

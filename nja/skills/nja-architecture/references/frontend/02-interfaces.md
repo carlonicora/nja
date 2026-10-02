@@ -16,6 +16,18 @@ last_updated: "2026-03-01"
 
 # Frontend: Interfaces
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- DECISION MATRIX
+- COMMON MISTAKES
+- RELATED FILES
+- Interface Pattern
+- Input Type Pattern
+- Edge Property Interface Pattern
+- Relationship Input for Edge Properties
+
 ---
 
 ## WHEN TO USE

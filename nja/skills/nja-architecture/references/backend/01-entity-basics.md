@@ -18,6 +18,19 @@ last_updated: "2026-03-01"
 
 # Backend: Entity Basics
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- ENFORCEMENT CHECKPOINT
+- DECISION MATRIX
+- COMMON MISTAKES
+- RELATED FILES
+- Entity Metadata
+- Entity Type Definition
+- Entity Descriptor Definition
+- Field Types
+
 ---
 
 ## WHEN TO USE

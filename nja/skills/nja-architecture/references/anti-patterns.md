@@ -15,6 +15,17 @@ last_updated: "2026-08-26"
 
 # Anti-Patterns (DON'T DO THIS)
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- DETECTION GUIDE
+- COMMON MISTAKES
+- RELATED FILES
+- Backend Anti-Patterns
+- Frontend Anti-Patterns
+- Summary
+
 ---
 
 ## WHEN TO USE
@@ -48,6 +59,7 @@ Read this file when:
 | `asChild`, `<DialogContent>` as single component, `<Sub>` | Using Radix API — this project uses Base UI |
 | `blocksToText(...)`, `paragraphBlocks(...)`, any blocks↔text converter | Duplicates the BlockNote editor — display with `BlockNoteEditorContainer`, test emptiness with `onEmptyChange` (see [frontend/06-blocknote.md](frontend/06-blocknote.md)) |
 | A plain `<Input>` feeding a rich-text (`description`/`content`/`notes`) field | The blocks array is the only representation — collect it with an editor |
+| `<FormBlockNote>` inside an `EditorSheet` with no `onEmptyChange` / `isFormDirty` | BlockNote's mount-time change marks the form dirty; the discard dialog fires on an untouched editor (see [frontend/06-blocknote.md](frontend/06-blocknote.md) § "Dirty state inside `EditorSheet`") |
 | `<PopoverTrigger><Button>` or trigger wrapping Button | Nested `<button>` — hydration error |
 | `someDate: { type: "string" }` for a calendar field | Storing a date as a String — Cypher temporal ops break (see [date-handling.md](date-handling.md)) |
 | `SET n.due_date = $due_date` in custom Cypher | Bypasses framework cast — stores a String (use `date(left($v, 10))`) |

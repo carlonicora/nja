@@ -1,6 +1,6 @@
 ---
 name: nja-delegate-implementation
-description: Use when an implementation plan exists and the work should run in a fresh session — the user asks to delegate the implementation, hand the plan to another session or agent, or produce a prompt file to run the plan elsewhere. Typically the step right after nja-writing-plan.
+description: Use when an implementation plan exists and the work should run in a fresh session — the user asks to delegate the implementation, hand the plan to another session or agent, or produce a prompt file to run the plan elsewhere. Typically the step right after nja-writing-plan. Writes one temporary markdown prompt file that @-links the spec and plan and carries the session context a fresh session needs to execute the plan.
 ---
 
 # Delegate implementation (nja)

@@ -16,6 +16,15 @@ last_updated: "2026-07-14"
 
 # Typography Roles — one recipe per text role
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- THE 17 ROLES
+- TEXT-COLOR TOKENS
+- COMMON MISTAKES
+- RELATED FILES
+
 ---
 
 ## WHEN TO USE

@@ -15,6 +15,15 @@ last_updated: "2026-03-01"
 
 # Architecture Decision Records
 
+## Contents
+
+- Decision Template
+- ADR-005: RBAC via Neo4j Relationship Patterns
+- ADR-004: JSON:API as API Protocol
+- ADR-003: Neo4j as Primary Database
+- ADR-002: pnpm Monorepo with Shared Libraries
+- ADR-001: NestJS + Next.js Stack
+
 > Record WHY you chose X over Y. Future-you (and future-Claude) will thank you.
 > New decisions are added at the top. Use the template below.
 

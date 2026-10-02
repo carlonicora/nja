@@ -1,6 +1,6 @@
 ---
 name: nja-handoff
-description: Use when ending a session whose work another agent will continue — the user asks to hand off, compact the conversation, write a handoff/continuation document, or prepare context for the next session.
+description: Use when ending a session whose work another agent will continue — the user asks to hand off, compact the conversation, write a handoff/continuation document, or prepare context for the next session. Writes a redacted handoff document to the OS temp directory that summarises the conversation, references existing artifacts by path, and suggests skills for the next agent.
 argument-hint: "What will the next session be used for?"
 ---
 

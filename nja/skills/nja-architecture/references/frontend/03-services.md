@@ -17,6 +17,18 @@ last_updated: "2026-03-01"
 
 # Frontend: Services
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- ENFORCEMENT CHECKPOINT
+- DECISION MATRIX
+- COMMON MISTAKES
+- RELATED FILES
+- Service Pattern
+- WRONG vs RIGHT Examples
+- Error Handling
+
 ---
 
 ## WHEN TO USE

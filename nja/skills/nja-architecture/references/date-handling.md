@@ -26,6 +26,16 @@ last_updated: "2026-05-17"
 
 # Date and DateTime Handling
 
+## Contents
+
+- WHEN TO USE
+- THE NON-NEGOTIABLE RULES
+- HOW IT WORKS (the full lifecycle)
+- DECISION MATRIX — date vs datetime vs string
+- ANTI-PATTERNS (DO NOT DO)
+- VERIFYING A FIELD IS STORED CORRECTLY
+- CHECKPOINT — before merging a change that touches a date field
+
 > A single rule, end-to-end: **dates and datetimes are stored as native Neo4j
 > temporal types — never as strings**. The framework guarantees this only if
 > every layer respects the contract below. Read this before touching any field

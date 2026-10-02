@@ -17,6 +17,17 @@ last_updated: "2026-03-01"
 
 # Backend: Services
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- DECISION MATRIX
+- COMMON MISTAKES
+- RELATED FILES
+- Service Pattern
+- Custom Method Patterns
+- Error Handling
+
 ---
 
 ## WHEN TO USE

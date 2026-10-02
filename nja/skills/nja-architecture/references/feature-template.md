@@ -13,6 +13,11 @@ last_updated: "2026-03-01"
 
 # Feature Handbook Template
 
+## Contents
+
+- How to Use This Template
+- Template Starts Here
+
 > Copy this template to `docs/features/<module-name>.md` when documenting a feature or module.
 > Update the frontmatter `id` and `title` fields for each new handbook.
 > The quality bar: a fresh Claude instance reads ONLY the handbook and implements correctly without touching source code.

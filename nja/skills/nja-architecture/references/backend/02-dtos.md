@@ -16,6 +16,20 @@ last_updated: "2026-03-01"
 
 # Backend: DTOs (Data Transfer Objects)
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- DECISION MATRIX
+- COMMON MISTAKES
+- RELATED FILES
+- JSON:API Request Structure
+- Reference DTO (for relationship references)
+- POST DTO (Create)
+- PUT DTO (Full Update)
+- Relationship DTOs (for Edge Properties)
+- Error Handling
+
 ---
 
 ## WHEN TO USE

@@ -1,6 +1,6 @@
 ---
 name: nja-create-verifier
-description: Use when a repo has no scripted way to prove UI or API behaviour by driving the real app — "make a verification skill", "make a control skill for this repo", "give me a way to prove this works before I test it", or when the user is being asked to hand-test something an agent could have driven itself. Generates a project-local verify-<app> skill plus a feature map, then proves it by running it once.
+description: Use when a repo has no scripted way to prove UI or API behaviour by driving the real app — "make a verification skill", "make a control skill for this repo", "give me a way to prove this works before I test it", or when the user is being asked to hand-test something an agent could have driven itself. Generates a project-local verify-APP skill plus a feature map, then proves it by running it once.
 disable-model-invocation: true
 ---
 
@@ -53,7 +53,7 @@ Write `.claude/skills/verify-<app>/SKILL.md` with YAML frontmatter (`name: verif
 
 Create `.claude/skills/verify-<app>/features/README.md` plus one file per user-facing feature you can identify. Aim for the top three to five to start, taken from routes under `apps/web/src/app`, the module list, or the nav.
 
-Follow the shape in `references/feature-map-example/`: a README index and one file per feature. Each file answers, from the user's point of view: what the feature is, how to reach it, how to drive it with the harness, and what observable end state proves it works. The four H2s are `Sub-features`, `How to get to it (user POV)`, `Driving it with <harness>`, and `Gotchas`.
+Follow the shape in `references/feature-map-example/`: a README index and one file per feature (`references/feature-map-example/create-note.md` is a browser-and-CLI create flow, `references/feature-map-example/search.md` a search flow with empty and clear states). Each file answers, from the user's point of view: what the feature is, how to reach it, how to drive it with the harness, and what observable end state proves it works. The four H2s are `Sub-features`, `How to get to it (user POV)`, `Driving it with <harness>`, and `Gotchas`.
 
 The map is the repo's maintained verification source. A proof that drives one convenient entry point is incomplete when the map lists others.
 

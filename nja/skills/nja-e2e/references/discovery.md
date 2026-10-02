@@ -1,5 +1,14 @@
 # Discovery — from a page to the tests it needs
 
+## Contents
+
+- 1. What to read, in order
+- 2. Turning code into a test list
+- 3. Writing a Given/When/Then that survives review
+- 4. What not to test
+- 5. Dynamic routes and fixtures
+- 6. Report shape for pass 1
+
 Pass 1's method. Conventions for *writing* the tests live in the repo's own
 `apps/web/tests/README.md`; this file covers only the step that guide assumes
 you have already done — knowing which tests to write.

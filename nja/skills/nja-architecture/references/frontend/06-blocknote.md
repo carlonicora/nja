@@ -19,6 +19,19 @@ last_updated: "2026-09-02"
 
 # BlockNote rich-text fields
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- ENFORCEMENT CHECKPOINT
+- COMMON MISTAKES
+- RELATED FILES
+- The lifecycle
+- Model
+- Editing — inside a form
+- Editing — outside a form
+- Displaying
+
 ---
 
 ## WHEN TO USE
@@ -70,6 +83,10 @@ Read this file when:
 - Storing a rich-text field as a `string` in component state, then converting on
   save. Hold the blocks.
 - A plain `<Input>` collecting a value destined for a BlockNote field.
+- A `FormBlockNote` inside an `EditorSheet` without `onEmptyChange` and a
+  matching `isFormDirty` — the mount-time change marks the form dirty and the
+  discard dialog appears on an untouched editor (see "Dirty state inside
+  `EditorSheet`").
 - Typing the interface getter as `string` — it is `any`, defaulting to `[]`.
 - `@IsString()` on the DTO is CORRECT: the wire format is the JSON string the
   model produced. Do not "fix" it to an array validator.
@@ -174,6 +191,55 @@ block value is inspected, and it never looks inside a block.
 > **Why not just check the text?** BlockNote leaves an empty paragraph behind
 > when the user deletes the content, so `description.length > 0` is true for a
 > visually empty editor. The editor is the only thing that knows.
+
+### Dirty state inside `EditorSheet`
+
+BlockNote fires `onChange` once on mount for an empty editor (it inserts its
+trailing paragraph). react-hook-form marks the field dirty, and `EditorSheet`'s
+default check (`Object.keys(form.formState.dirtyFields).length > 0`) then shows
+the discard dialog on a form nobody touched. Every editor with a rich-text field
+therefore passes its own `isFormDirty` that drops empty rich-text fields, and
+re-seeds the emptiness flags in `onReset`:
+
+```tsx
+const { dirtyFields } = form.formState;
+const isFormDirty = useCallback(() => {
+  const dirty: Record<string, unknown> = { ...dirtyFields };
+  if (dirty.description && isDescriptionEmpty) delete dirty.description;
+  return Object.keys(dirty).length > 0;
+}, [dirtyFields, isDescriptionEmpty]);
+
+<EditorSheet
+  form={form}
+  isFormDirty={isFormDirty}
+  onReset={() => {
+    setIsDescriptionEmpty(!exam?.description || (Array.isArray(exam.description) && exam.description.length === 0));
+    return getDefaultValues();
+  }}
+  …
+>
+```
+
+One state, one strip line and one reset line per rich-text field. The generator
+emits all of this for every `blocknote` field; a hand-written editor copies it.
+
+When the container is used directly inside a form (a markdown import feeding
+`markdownContent`, for example), the same rule applies through the container's
+`onChange(content, isEmpty)`: write the field with `shouldDirty: !isEmpty` and
+keep the flag in sync.
+
+```tsx
+<BlockNoteEditorContainer
+  …
+  onChange={(content: any, isEmpty: boolean) => {
+    setIsContentEmpty(isEmpty);
+    form.setValue("content", content, { shouldDirty: !isEmpty });
+  }}
+/>
+```
+
+Reference implementations: wyrdli `ClueEditor.tsx` (two form fields) and
+a360ai `OpportunityEditor.tsx` (container-driven `notes`).
 
 ---
 

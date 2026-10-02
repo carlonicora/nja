@@ -1,6 +1,6 @@
 ---
 name: nja-verify
-description: Use when auditing uncommitted changes for architecture compliance — before committing, before handing work back to the user, after generating or implementing a module, or whenever asked to verify/audit/review a diff against the nestjs-neo4jsonapi + nextjs-jsonapi architecture rules.
+description: Use when auditing uncommitted changes for architecture compliance — before committing, before handing work back to the user, after generating or implementing a module, or whenever asked to verify/audit/review a diff against the nestjs-neo4jsonapi + nextjs-jsonapi architecture rules. Runs a read-only audit of the uncommitted files against the nja-architecture skill and reports each violation with file:line evidence, the rule it breaks and a severity, without fixing anything.
 ---
 
 # Architecture audit

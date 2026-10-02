@@ -1,6 +1,6 @@
 ---
 name: nja-automate-me
-description: Use ONLY when explicitly asked — "automate me", "/nja-automate-me", "create/update my mode skill", "capture how I work as a skill", "turn my preferences into a skill". Mines the user's own transcripts, memories and CLAUDE.md files for recurring working conventions, asks a few structured questions, and writes or revises one personal <handle>-mode skill that agents follow. Never invoke this on your own initiative.
+description: Use ONLY when explicitly asked — "automate me", "/nja-automate-me", "create/update my mode skill", "capture how I work as a skill", "turn my preferences into a skill". Mines the user's own transcripts, memories and CLAUDE.md files for recurring working conventions, asks a few structured questions, and writes or revises one personal HANDLE-mode skill that agents follow. Never invoked on the agent's own initiative.
 disable-model-invocation: true
 ---
 

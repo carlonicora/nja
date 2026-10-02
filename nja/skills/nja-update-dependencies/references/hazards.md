@@ -1,5 +1,15 @@
 # Dependency upgrade hazards
 
+## Contents
+
+- 1. The dual-instance peer-fingerprint failure
+- 2. Stack-invariant hold-backs
+- 3. The three dependency surfaces
+- 4. pnpm 11
+- 5. Published-version drift (report-only)
+- 6. Gotchas
+- 7. The TypeScript 6 / NestJS 12 migration
+
 Distilled from the `narr8`-family `DEPENDENCY_UPGRADE_GUIDE.md` playbook
 (dreamer / neural-erp / only35 / phlow). Its procedure — tagging, the `ncu`
 walkthrough, committing and pushing — is replaced here by the skill's phase

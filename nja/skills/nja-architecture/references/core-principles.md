@@ -15,6 +15,16 @@ last_updated: "2026-03-01"
 
 # Core Principles
 
+## Contents
+
+- WHEN TO USE
+- CRITICAL RULES
+- ENFORCEMENT CHECKPOINT
+- DECISION MATRIX
+- COMMON MISTAKES
+- RELATED FILES
+- Architecture Overview
+
 ---
 
 ## WHEN TO USE

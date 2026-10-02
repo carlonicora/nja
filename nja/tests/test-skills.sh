@@ -22,6 +22,87 @@ for d in "$SKILLS_DIR"/*/; do
   t_assert_eq "$n" "$(printf '%s' "$fm" | sed -n 's/^name: *//p')" "$n frontmatter name matches its directory"
 done
 
+# ── authoring best practices ──────────────────────────────────────────────
+#
+# Anthropic skill authoring best practices set hard limits on the frontmatter
+# and on how a skill's files are laid out. Claude loads every description at
+# startup to pick a skill, and reads SKILL.md and its references on demand;
+# breaking these rules makes a skill misfire or get read only in part.
+
+for d in "$SKILLS_DIR"/*/; do
+  n="$(basename "$d")"; f="$d/SKILL.md"
+  fm="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f' "$f" 2>/dev/null)"
+  name="$(printf '%s\n' "$fm" | sed -n 's/^name: *//p' | head -1)"
+  desc="$(printf '%s\n' "$fm" | sed -n 's/^description: *//p' | head -1 \
+    | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")"
+
+  # Best practices: name is at most 64 chars of lowercase letters, digits and
+  # hyphens, and may not use the reserved words "anthropic" or "claude".
+  bad=""
+  [ "${#name}" -le 64 ] || bad="$bad length ${#name} > 64;"
+  printf '%s' "$name" | grep -qE '^[a-z0-9-]+$' || bad="$bad not [a-z0-9-]+;"
+  printf '%s' "$name" | grep -qiE 'anthropic|claude' && bad="$bad reserved word;"
+  if [ -z "$bad" ]; then t_pass "$n name follows the naming rules"
+  else t_fail "$n name follows the naming rules" "[$name]:$bad"; fi
+
+  # Best practices: description is non-empty and at most 1024 chars.
+  if [ -n "$desc" ] && [ "${#desc}" -le 1024 ]; then t_pass "$n description is 1-1024 chars"
+  else t_fail "$n description is 1-1024 chars" "length ${#desc}"; fi
+
+  # Best practices: description may not contain XML tags.
+  tag="$(printf '%s' "$desc" | grep -oE '<[^>]*>' | head -3 | tr '\n' ' ')"
+  if [ -z "$tag" ]; then t_pass "$n description has no XML tags"
+  else t_fail "$n description has no XML tags" "found: $tag"; fi
+
+  # Best practices: description is written in third person, since it is
+  # injected into the system prompt. Quoted trigger phrases are the user
+  # speaking, so they may say "you" or "I".
+  unq="$(printf '%s' "$desc" | sed 's/"[^"]*"//g')"
+  pov="$( { printf '%s\n' "$unq" | grep -oiwE 'you|your|yours'
+            printf '%s\n' "$unq" | grep -owE 'I'; } | sort -u | tr '\n' ' ')"
+  if [ -z "$pov" ]; then t_pass "$n description is written in third person"
+  else t_fail "$n description is written in third person" "first/second person outside quotes: $pov"; fi
+
+  # Best practices: keep the SKILL.md body under 500 lines; move detail into
+  # reference files instead.
+  body="$(awk 'NR==1&&/^---$/{f=1;next} f==1&&/^---$/{f=2;next} f==2{c++} END{print c+0}' "$f" 2>/dev/null)"
+  if [ "$body" -lt 500 ]; then t_pass "$n SKILL.md body is under 500 lines"
+  else t_fail "$n SKILL.md body is under 500 lines" "$body lines"; fi
+
+  # Best practices: keep references one level deep — every reference file is
+  # linked straight from SKILL.md, because Claude may only partially read a
+  # file it reaches through another reference. Hidden files (.DS_Store) are
+  # not references and never ship.
+  unlinked=""
+  if [ -d "$d/references" ]; then
+    skill_md="$(cat "$f" 2>/dev/null)"
+    while IFS= read -r ref; do
+      rel="${ref#"$d"}"; rel="${rel#/}"
+      sub="${rel#references/}"
+      base="$(basename "$ref")"
+      case "$skill_md" in
+        *"$rel"*|*"$sub"*|*"$base"*) ;;
+        *) unlinked="$unlinked $rel" ;;
+      esac
+    done <<EOF
+$(find "$d/references" -type f ! -name '.*' 2>/dev/null | sort)
+EOF
+  fi
+  if [ -z "$unlinked" ]; then t_pass "$n links every reference file directly from SKILL.md"
+  else t_fail "$n links every reference file directly from SKILL.md" "unlinked:$unlinked"; fi
+done
+
+# Best practices: a reference file over 100 lines opens with a table of
+# contents, so Claude sees the full scope even when it previews only the top.
+# The first `## ` heading outside fenced code must be `## Contents`.
+for ref in $(find "$SKILLS_DIR" -path '*/evals' -prune -o -path '*/references/*' -type f -name '*.md' -print 2>/dev/null | sort); do
+  rel="${ref#"$SKILLS_DIR"/}"
+  lines="$(awk 'END{print NR}' "$ref")"
+  [ "$lines" -gt 100 ] || continue
+  first="$(awk '/^[ \t]*```/{c=!c;next} !c&&/^## /{print;exit}' "$ref")"
+  t_assert_eq "## Contents" "$first" "$rel ($lines lines) opens with a ## Contents table"
+done
+
 # ── cited reference paths resolve ─────────────────────────────────────────
 #
 # A skill that cites `references/foo.md` and ships no such file sends the
