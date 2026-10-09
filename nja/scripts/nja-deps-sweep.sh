@@ -187,7 +187,15 @@ LEDGER_EOF
       ' "$ROOT/$ws/package.json" 2>/dev/null
     done
     nja_yaml_set_version "$ROOT/pnpm-workspace.yaml" catalog   "$pkg" "$target"
-    nja_yaml_set_version "$ROOT/pnpm-workspace.yaml" overrides "$pkg" "$target"
+    # An override that references the catalog ('catalog:') follows the catalog
+    # entry written above. Replacing the reference with the literal target
+    # silently detaches the override from the catalog — the manifest branch
+    # above skips catalog: for the same reason.
+    case "$(nja_yaml_entries "$ROOT/pnpm-workspace.yaml" overrides \
+      | awk -F'\t' -v p="$pkg" '$1 == p { print $2 }')" in
+      catalog:*) ;;
+      *) nja_yaml_set_version "$ROOT/pnpm-workspace.yaml" overrides "$pkg" "$target" ;;
+    esac
     nja_ok "$pkg -> $target"
   done <<LEDGER_EOF
 $TARGETS

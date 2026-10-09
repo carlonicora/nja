@@ -361,6 +361,8 @@ ws="$(cat "$repo/pnpm-workspace.yaml")"
 t_assert_contains "$ws" "eslint: ^9.40.0"          "catalog entry moved to the ledger target"
 t_assert_contains "$ws" "react: 19.3.0"            "catalog react moved to the ledger target"
 t_assert_contains "$ws" "class-validator: ^0.16.0" "overrides entry moved to the ledger target"
+t_assert_contains "$ws" "react: 'catalog:'"        "an override that references the catalog keeps the reference"
+t_assert_not_contains "$ws" "react: '19.3.0'"      "a catalog: override is never replaced by a literal version"
 t_assert_not_contains "$ws" "framer-motion"        "a held package is never written"
 t_assert_not_contains "$(bash "$LSWEEP" --ledger "$ledger" --root "$repo" 2>&1)" "ncu" "ledger mode never invokes ncu"
 
