@@ -93,6 +93,44 @@ in a *constructor* parameter, `import type` erases the runtime binding, its
 no compile error, no test failure, a wrong object at runtime. Check each symbol;
 never codemod this one blind.
 
+### `Error occurred prerendering page "…"` with `digest: 'HTTP_503'`
+
+The build called the API. A prerendered page (static, or a dynamic segment with
+`generateStaticParams`) reads through the cached path (`cachedServerGet`), so
+`next build` makes that call. With no API reachable the call fails, and the
+prerender fails **even when the caller catches the error**: `cachedServerGet`
+throws so Next does not store the result, and Next fails the page on that
+throw. Any `HTTP_<status>` digest is the same failure.
+
+Fix: move the read into a component that awaits `connection()` behind its own
+`<Suspense>`; a route handler calls `connection()` first. The read is still
+cached at run time. **Never fix it by starting the API for the build** — Docker
+and CI build with no API, so the build only passes on your machine. Verify by
+building with the API stopped.
+
+Related, at run time: a cached page failing with `HTTP_404`, where calling the
+API endpoint returns "Cannot GET", means the route is not mounted. That is a
+server change (e.g. `bootstrap({ howTo: { publicRoutes: true } })`), not a web
+one.
+
+### ``Route "…": Next.js encountered URL data `useSearchParams()` in a Client Component outside of `<Suspense>` ``
+
+Digest `CLIENT_HOOK_DYNAMIC`. Cache Components prerenders the page, and a client
+component reading the URL has no boundary to suspend into, so it blocks the
+shell. Often the hook is inside a library component, not in your code.
+
+Fix: give the segment its own `loading.tsx` (the standard skeleton), or move the
+consumer behind its own `<Suspense>`. **Never add `export const instant = false`**,
+even though the error suggests it — it makes the route blocking to hide the
+failure.
+
+### ``Route segment config "revalidate" is not compatible with `nextConfig.cacheComponents`. Please remove it.``
+
+`dynamic`, `revalidate`, `fetchCache`, `dynamicParams` and `runtime = 'edge'`
+all error under Cache Components, re-exports included. Delete the export.
+Caching is declared on the data instead: a module with `cache: "<profile or
+tag>"` already goes through the cached path.
+
 ---
 
 ## Gate 3 — `pnpm test`

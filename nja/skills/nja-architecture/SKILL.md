@@ -1,6 +1,6 @@
 ---
 name: nja-architecture
-description: Use BEFORE editing or creating any TypeScript file under apps/api/src/features, apps/web/src/features, or packages/*/src in a nestjs-neo4jsonapi + nextjs-jsonapi monorepo. Routes to the layer-specific reference doc (entity, DTO, repository, service, controller, model, interface, service, component) and surfaces NestJS+Neo4j+JSON:API rules. Required reading before backend or frontend feature work.
+description: Use BEFORE editing or creating any TypeScript file under apps/api/src/features, apps/web/src/features, apps/web/src/app (pages, layouts, loading.tsx, route handlers), apps/web/src/proxy.ts, or packages/*/src in a nestjs-neo4jsonapi + nextjs-jsonapi monorepo. Routes to the layer-specific reference doc (entity, DTO, repository, service, controller, model, interface, service, component, route/Cache Components) and surfaces NestJS+Neo4j+JSON:API rules. Required reading before backend or frontend feature work.
 ---
 
 # Architecture — nestjs-neo4jsonapi + nextjs-jsonapi
@@ -12,6 +12,7 @@ description: Use BEFORE editing or creating any TypeScript file under apps/api/s
 Invoke whenever the next action is to create or edit a TypeScript file under any of:
 - `apps/api/src/features/**`
 - `apps/web/src/features/**`
+- `apps/web/src/app/**` and `apps/web/src/proxy.ts`
 - `packages/*/src/**`
 
 If the task is to create a NEW entity (backend or frontend), use the full-chain rows in the routing table below.
@@ -40,6 +41,7 @@ If the task is to create a NEW entity (backend or frontend), use the full-chain 
 | `apps/web/src/features/*/data/*Service.ts` | `references/frontend/03-services.md` → `references/anti-patterns.md` |
 | `apps/web/src/features/*/data/*.ts` (other) | `references/frontend/01-models.md` → `references/date-handling.md` (if `rehydrate()` or `createJsonApi()` touches a date/datetime) |
 | `apps/web/src/features/*/components/**` (or `**/*.tsx` under features) | `references/frontend/04-components.md` → `references/frontend/05-typography.md` (if the edit styles text) → `references/frontend/06-blocknote.md` (if the file touches a rich-text field: `description`, `content`, `notes`) |
+| `apps/web/src/app/**` (pages, layouts, `loading.tsx`, route handlers) and `apps/web/src/proxy.ts` | `references/frontend/07-routes-and-cache-components.md` → `references/frontend/03-services.md` (if the edit adds a cached read) |
 | Creating a NEW frontend entity (full chain) | `references/core-principles.md` → `references/frontend/02-interfaces.md` → `references/frontend/01-models.md` → `references/frontend/03-services.md` → `references/frontend/04-components.md` → `references/frontend/05-typography.md` → `references/frontend/template.md` → `references/date-handling.md` (if any field is a date/datetime) → `references/frontend/06-blocknote.md` (if any field is rich text) |
 
 ### Shared packages
@@ -186,4 +188,5 @@ or `packages/*/src`:
 | `references/frontend/04-components.md` | Base UI patterns (NOT Radix), render prop, trigger composition |
 | `references/frontend/05-typography.md` | Typography roles: one Tailwind recipe per text role, color tokens, header-markup rules |
 | `references/frontend/06-blocknote.md` | BlockNote rich-text fields: model conversion, display, editing, emptiness — and the converters never to write |
+| `references/frontend/07-routes-and-cache-components.md` | App Router files and the proxy under Cache Components: the session shell, loading files, data caching, build without the API, admin gate, login gate, locale-safe links |
 | `references/frontend/template.md` | Copy-paste template for new frontend entities |

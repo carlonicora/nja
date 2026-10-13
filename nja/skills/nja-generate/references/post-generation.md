@@ -70,3 +70,4 @@ The output is a working CRUD scaffold. Anything beyond standard CRUD is hand-add
 - [ ] `alias`/`dtoKey` only where there is a collision or a required specific wire key.
 - [ ] `requiresS3: true` if the entity has an image/file field.
 - [ ] Money fields use `kind: { "type": "money" }`; derived fields use `computed` + `readOnly`.
+- [ ] Each generated page has a `loading.tsx` (`<plural>/` and `<plural>/[id]/`) rendering `PageSkeleton` from `@/features/common/components/skeletons/PageSkeleton`. The frontend generator writes both from nextjs-jsonapi 4.0.3. On an older library, add them by hand: Cache Components needs one per data-fetching segment. Either way, the app must have `PageSkeleton` at that path.
