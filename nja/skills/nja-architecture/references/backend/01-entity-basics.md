@@ -13,7 +13,7 @@ related_docs:
   - backend-03-repositories
   - backend-template
 enforcement: critical
-last_updated: "2026-03-01"
+last_updated: "2026-10-15"
 ---
 
 # Backend: Entity Basics
@@ -29,6 +29,7 @@ last_updated: "2026-03-01"
 - Entity Metadata
 - Entity Type Definition
 - Entity Descriptor Definition
+- Company Scope and Tenancy
 - Field Types
 
 ---
@@ -47,6 +48,7 @@ Read this file when:
 1. **Entity Descriptor is the single source of truth** - Fields, relationships, and computed properties are all defined here.
 2. **Metadata file is separate** - JSON:API type, endpoint, Neo4j label in `.meta.ts` file.
 3. **Export both the type and the descriptor** - `export type Example = ...` and `export const ExampleDescriptor = ...`
+4. **An unscoped described entity declares its tenancy** - `isCompanyScoped: false` together with a `description` requires `tenancy` (`"global"` | `"self"` | `"internal"` | `{ via: "<relationship key>" }`). `defineEntity` throws without it and the graph catalog refuses the type at boot (nestjs-neo4jsonapi 5.0.0+).
 
 ---
 
@@ -57,6 +59,7 @@ Read this file when:
 > 2. Are computed values in `computed`, not `fields`? If a derived value is in `fields`, **STOP**.
 > 3. Are relationship directions correct from THIS entity's perspective? If unsure, **STOP** and check the Decision Matrix below.
 > 4. Is the model registered in the module's `onModuleInit()`? If no, **STOP**.
+> 5. Is the entity `isCompanyScoped: false` AND does it carry a `description`? Then is `tenancy` declared, and does a `via` key point at a company-scoped entity or at the company itself? If no, **STOP** — the app will not boot.
 
 ---
 
@@ -88,6 +91,17 @@ Read this file when:
 | Is it just a simple association? | No `fields` array needed |
 | Example: position of photo in gallery | `fields: [{ name: "position", type: "number" }]` |
 
+### Company Scope and Tenancy
+
+| The entity… | Declare |
+|---|---|
+| belongs to one company (the default) | `isCompanyScoped: true` (or omit it); the framework adds the `BELONGS_TO` edge and the read predicate |
+| is reference data every company reads (laws, tariffs, feature flags, how-tos) | `isCompanyScoped: false, tenancy: "global"` |
+| reaches its company through ONE relationship on this descriptor (a message → its conversation, a line → its invoice) | `isCompanyScoped: false, tenancy: { via: "<relationship key>" }` — the target must be company-scoped or be the company itself |
+| IS the company | `isCompanyScoped: false, tenancy: "self"` |
+| is an auth/ingestion/admin record the assistant must never see | `isCompanyScoped: false, tenancy: "internal"` (not catalogued; reads unchanged) |
+| has no relationship that reaches a company and is not reference data | `"internal"` until a company relationship exists — never `"global"` to make it boot |
+
 ---
 
 ## COMMON MISTAKES
@@ -96,6 +110,7 @@ Read this file when:
 - Wrong relationship direction (remember: from THIS entity's perspective)
 - Missing `dtoKey` on relationships (defaults to relationship name)
 - Forgetting to export the descriptor type
+- Setting `isCompanyScoped: false` on an entity with a `description` and no `tenancy` (boot error), or declaring `"global"` on tenant data just to make it boot (every company's rows become visible to the assistant)
 
 ---
 
@@ -242,6 +257,50 @@ export type GalleryDescriptorType = typeof GalleryDescriptor;
 ```
 
 ---
+
+## Company Scope and Tenancy
+
+`isCompanyScoped` (default `true`) tells `AbstractRepository.buildDefaultMatch()` to add the
+`BELONGS_TO` company predicate to every read, and `defineEntity` to manage the `company`
+relationship. An entity that sets it to `false` has no such predicate, so when it also carries a
+`description` (which makes it visible to the assistant and the MCP tools) it MUST say how it is
+scoped. `tenancy` is that declaration; `defineEntity` rejects an unscoped described entity without
+it, and the graph catalog refuses to boot on one.
+
+```typescript
+// Reference data shared by every company
+export const LawDescriptor = defineEntity<Law>()({
+  ...lawMeta,
+  isCompanyScoped: false,
+  tenancy: "global",
+  description: "A statute (legge) in the shared legal corpus.",
+  fields: { /* … */ },
+  relationships: {},
+});
+
+// Reaches its company through its parent: the predicate becomes
+// EXISTS { MATCH (message)<-[:HAS_MESSAGE]-(:Conversation)-[:BELONGS_TO]->(company) }
+export const MessageDescriptor = defineEntity<Message>()({
+  ...messageMeta,
+  isCompanyScoped: false,
+  tenancy: { via: "conversation" },
+  description: "One message of a conversation.",
+  fields: { /* … */ },
+  relationships: {
+    conversation: { model: conversationMeta, direction: "in", relationship: "HAS_MESSAGE", cardinality: "one" },
+  },
+});
+```
+
+Rules:
+- `tenancy` is only valid together with `isCompanyScoped: false`.
+- `{ via }` names ONE relationship key of this descriptor. Its target must be company-scoped, or be the
+  company itself (then the predicate matches the company node directly). Multi-hop chains are not
+  supported: give the intermediate entity its own `tenancy` and point `via` at it.
+- `"internal"` keeps the type out of the assistant catalog; its HTTP reads are unchanged, so scope them
+  in the repository as before.
+- `tenancy` governs READS through `buildDefaultMatch()`. Write paths of an unscoped entity still match by
+  id; keep an unscoped entity out of `chat.writable` unless its repository guards writes itself.
 
 ## Field Types
 

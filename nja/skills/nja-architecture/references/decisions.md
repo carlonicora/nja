@@ -10,7 +10,7 @@ related_docs:
   - core-principles
   - anti-patterns
 enforcement: recommended
-last_updated: "2026-03-01"
+last_updated: "2026-10-15"
 ---
 
 # Architecture Decision Records
@@ -18,6 +18,7 @@ last_updated: "2026-03-01"
 ## Contents
 
 - Decision Template
+- ADR-006: Tenancy Declaration for Unscoped Entities
 - ADR-005: RBAC via Neo4j Relationship Patterns
 - ADR-004: JSON:API as API Protocol
 - ADR-003: Neo4j as Primary Database
@@ -52,6 +53,33 @@ What is the change we're making?
 ### Consequences
 What are the positive and negative results of this decision?
 ```
+
+---
+
+## ADR-006: Tenancy Declaration for Unscoped Entities
+
+**Date:** 2026-10-15
+**Status:** Accepted
+
+### Context
+`isCompanyScoped: false` removes the company predicate from every read. Entities that also carry a `description` are listed by the graph catalog and reachable through the assistant and the MCP tools. In a360ai, 48 such descriptors (companies, activity logs, research messages, portal records…) were readable across tenants through `search_entities`, and nothing in the framework distinguished "shared reference data" from "tenant data whose company is one hop away" from "never expose this".
+
+### Decision
+An unscoped described descriptor must declare `tenancy`: `"global"` (shared reference data), `{ via: "<relationship key>" }` (one hop to a company-scoped entity or to the company node; `buildDefaultMatch()` emits the predicate), `"self"` (the company entity), or `"internal"` (never catalogued). `defineEntity` throws without it and `GraphCatalogService.buildCatalog()` refuses an undeclared or mis-targeted type at boot. Module visibility is bound to the token's company (`findModuleIdsForUser(userId, companyId)`), not to the union of the user's companies.
+
+### Alternatives Considered
+| Option | Pros | Cons |
+|--------|------|------|
+| Mandatory `tenancy` on unscoped described entities (chosen) | The leak becomes a boot error; one declaration documents the intent; predicate lives in `buildDefaultMatch()` like the company one | Breaking change: every nja app must declare it (apps have 0–80 such descriptors) |
+| Catalog-only exclusion of unscoped types | No descriptor changes | HTTP reads stay unscoped; reference data (laws, tariffs) disappears from the assistant |
+| Reuse `chat.scope` for tenancy | No new key | `chat.scope` is the proceeding/campaign scope of a chat run and is inert without a scope id; reusing it broke the judgement lookup |
+| Per-repository overrides | Local, no framework change | Invisible to the catalog; the next unscoped entity leaks again |
+
+### Consequences
+- nestjs-neo4jsonapi 5.0.0 is a major release; every app in the fleet declares `tenancy` on its unscoped described descriptors before bumping
+- `"global"` is a statement, not a bypass: tenant data without a company-reaching relationship is `"internal"` until the relationship exists
+- `tenancy` covers reads; unscoped entities stay out of `chat.writable` unless their repository guards writes
+- `via` is single-hop by design; chains are expressed by giving each intermediate entity its own `tenancy`
 
 ---
 

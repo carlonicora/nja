@@ -10,7 +10,7 @@ related_docs:
   - backend-03-repositories
   - frontend-03-services
 enforcement: critical
-last_updated: "2026-08-26"
+last_updated: "2026-10-15"
 ---
 
 # Anti-Patterns (DON'T DO THIS)
@@ -79,6 +79,8 @@ Read this file when:
 | `vi.importActual()` inside a non-`async` factory | `importActual` is async, unlike `jest.requireActual` |
 | `unplugin-swc` in a `vitest.config.ts` with no `oxc: false` | Oxc owns the transform; `decoratorMetadata` is not guaranteed, breaking reflection-resolved DI |
 | A content check on a valid LLM response that triggers `llm.call` again | Quality retry — banned; fix the schema/prompt, demote the check to a logged detector (see backend/06-llm-calls.md § "Retries — failures yes, quality never") |
+| `isCompanyScoped: false` with a `description` and no `tenancy` | Unscoped described entity — every read is a cross-tenant scan and the catalog would list every company's rows; `defineEntity` throws since nestjs-neo4jsonapi 5.0.0 (see backend/01-entity-basics.md § "Company Scope and Tenancy") |
+| `tenancy: "global"` on tenant data "to make it boot" | Declares every company's rows as shared reference data — the leak the rule exists to prevent; use `{ via }` or `"internal"` |
 
 ---
 
@@ -114,6 +116,7 @@ Read this file when:
 | `type: "string"` for a calendar field in the descriptor | Cypher temporal operators (`<`, `duration.between`) break on String | `type: "date"` (or `"datetime"`) — see [date-handling.md](date-handling.md) |
 | Custom Cypher `SET n.foo = $foo` for a date/datetime field | Bypasses framework auto-cast, stores a String | Cast in the query: `SET n.foo = date(left($foo, 10))` or `datetime($foo)` |
 | DTO uses `@IsString()` for a date/datetime attribute | Accepts non-date input, no validation | `@IsDateString()` |
+| Unscoped described descriptor without `tenancy` | Boot error; before 5.0.0 a silent cross-tenant exposure through the assistant and MCP | Declare `tenancy`: `"global"` for shared reference data, `{ via }` to the owning company, `"self"` for the company, `"internal"` to keep it out of the assistant |
 
 ### Backend Examples
 

@@ -29,7 +29,8 @@ same file; fields not relevant to one side are ignored by that side.
 | `targetDir` | yes | `"features/<domain>"`, e.g. `"features/procurement"`. Where files are written. |
 | `languages` | yes | `["en"]` minimum. Add `"it"` to also seed Italian i18n (the repo uses both). |
 | `extendsContent` | no | `true` if the entity extends the Content base (gets `name`/`tldr`/`abstract`/`content` + BlockNote editor). Default `false`. |
-| `isCompanyScoped` | no (backend) | Default `true` (auto company filtering). Set `false` only for global/foundation-like entities. |
+| `isCompanyScoped` | no (backend) | Default `true` (auto company filtering). Set `false` only for global/foundation-like entities. With `false` AND a `description`, the generated descriptor MUST also declare `tenancy` (see below) or the app will not boot (nestjs-neo4jsonapi 5.0.0+). |
+| `tenancy` | only with `isCompanyScoped: false` + `description` | `"global"` (shared reference data), `"self"` (the company entity), `"internal"` (never catalogued), or `{ "via": "<relationship key>" }` (one hop to a company-scoped entity or the company). The generator does not emit this key: add it to the generated descriptor by hand and run the api boot. |
 | `description` | no (backend) | One-line entity description for the chatbot/graph catalog. Recommended. |
 | `chat` | no (backend) | `{ "summary": "<TS expr>", "textSearchFields": ["name"] }` — `summary` is the body of `(data) => …`, e.g. `"data.name ?? data.id"`. |
 | `requiresS3` | no (backend) | `true` if the entity stores images/files (adds `S3Module`). Trigger: an `image`/`avatar`/`logo` field. |

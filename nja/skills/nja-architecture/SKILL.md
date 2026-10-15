@@ -76,6 +76,7 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 ### Backend (NestJS + Neo4j)
 - Extend `AbstractRepository` and `AbstractService` — never bypass the framework
 - Use `buildDefaultMatch()` for queries — auto-injects company filtering (security-critical)
+- An `isCompanyScoped: false` entity with a `description` declares `tenancy` (`"global"` | `"self"` | `"internal"` | `{ via }`) — `defineEntity` and the catalog refuse it otherwise (see `references/backend/01-entity-basics.md` § "Company Scope and Tenancy")
 - Use `readOne()` / `readMany()` — never return raw `result.records`
 - Use `{CURSOR}` placeholder for paginated queries — never manual `SKIP`/`LIMIT`
 - Pass `serialiser` to `initQuery()` — without it, type mapping fails
