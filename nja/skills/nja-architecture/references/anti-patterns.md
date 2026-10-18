@@ -10,7 +10,7 @@ related_docs:
   - backend-03-repositories
   - frontend-03-services
 enforcement: critical
-last_updated: "2026-10-15"
+last_updated: "2026-10-18"
 ---
 
 # Anti-Patterns (DON'T DO THIS)
@@ -78,6 +78,11 @@ Read this file when:
 | A `vi.mock` factory referencing a module-scope `const` | Vitest hoists the factory above it — "Cannot access before initialization" (use `vi.hoisted()`) |
 | `vi.importActual()` inside a non-`async` factory | `importActual` is async, unlike `jest.requireActual` |
 | `unplugin-swc` in a `vitest.config.ts` with no `oxc: false` | Oxc owns the transform; `decoratorMetadata` is not guaranteed, breaking reflection-resolved DI |
+| A service method returning `buildSingle(...)` / `buildList(...)` declared `Promise<JsonApiDataInterface>` or `Promise<any>` | Wrong document type: `JsonApiDataInterface` is the serialiser builder shape, `any` hides it. Declare `Promise<JsonApiSingleDocument>` / `Promise<JsonApiListDocument>` from `@carlonicora/nestjs-neo4jsonapi` (see [backend/04-services.md](backend/04-services.md)) |
+| `process.env.X = …`, `delete process.env.X`, `global.fetch = …` / `globalThis.X = …` in a spec | Survives into the next file in a shared (`isolate: false`) worker; nothing restores it. Use `vi.stubEnv()` / `vi.stubGlobal()` |
+| A hand-kept `ISOLATED_SPECS = [ "src/…spec.ts", … ]` array in a `vitest.config.ts` | Drifts the day a spec gains a `vi.mock`. Compute it with `isolatedSpecs()` from `vitest.isolation.ts` |
+| A `*.test.ts` / `*.test.tsx` spec, or `passWithNoTests: true` in a vitest config | The `include` collects `*.spec.*` only, so the file never runs; `passWithNoTests` turns a broken `include` into a green run of 0 files |
+| `UserModule` in an app's foundations exclude list without `ResponseLanguageModule` | `ResponseLanguageModule` imports the package `UserModule` and mounts its controller beside the app's extended one: duplicate-route boot crash. Exclude both and provide `ResponseLanguageService` from the app's user module |
 | A content check on a valid LLM response that triggers `llm.call` again | Quality retry — banned; fix the schema/prompt, demote the check to a logged detector (see backend/06-llm-calls.md § "Retries — failures yes, quality never") |
 | `isCompanyScoped: false` with a `description` and no `tenancy` | Unscoped described entity — every read is a cross-tenant scan and the catalog would list every company's rows; `defineEntity` throws since nestjs-neo4jsonapi 5.0.0 (see backend/01-entity-basics.md § "Company Scope and Tenancy") |
 | `tenancy: "global"` on tenant data "to make it boot" | Declares every company's rows as shared reference data — the leak the rule exists to prevent; use `{ via }` or `"internal"` |

@@ -129,6 +129,24 @@ the citation key. The file opens with a doc-comment carrying at minimum:
 - `Sources read in full:` — every component you actually read
 - locale and isolation notes where they matter
 
+**Each spec file must pass on its own.** The runner (`scripts/e2e.sh`) splits
+the suite by file across 3 shards, and each shard is a separate stack with its
+own database. So:
+
+- A file never reads data another file wrote. What it needs comes from the
+  setup project's seed or from the file's own seeding, with fixed ids.
+- `test.describe.serial` keeps its tests together in one file and one shard.
+  Use it when tests in a file depend on each other; never to order files.
+- A scoped run (`./scripts/e2e.sh <spec>`) starts one stack. Shard 1 of a full
+  run is that same stack.
+- Missing seed data is a failure. Never `test.skip` on it: add the seed, or
+  report it as a prerequisite.
+- Ports come from the runner. It reads `E2E_PORT_BASE` from the repo's `.env`
+  (shard k at base + 10k: api +0, web +1, worker health +2) and sets
+  `E2E_API_PORT` / `E2E_WEB_PORT` / `E2E_WORKER_HEALTH_PORT` for each shard.
+  A spec or support file reads those outputs through the repo's e2e env module,
+  never a literal port.
+
 ### 8. Selectors — and the one thing you may not do
 
 Priority is `getByTestId` → `getByRole` → `getByText`, per the repo guide.
@@ -163,8 +181,8 @@ fails loudly when it does.
 ### 10. Report
 
 Tests written, ids closed, testids proposed but not applied, and how to run just
-these tests against a stack that is already up (the repo guide documents the
-fast inner loop). **This skill does not run the suite** — a full boot is minutes
+these tests: `./scripts/e2e.sh <spec>` for one stack, or the fast inner loop
+against a stack that is already up, as the repo guide documents it. **This skill does not run the suite** — a full boot is minutes
 and belongs to `nja-pre-release`.
 
 ---
@@ -194,6 +212,9 @@ much larger job — say so and let the user decide.
 | "The title is close enough to the citation." | Byte for byte, or the link is broken and nothing will tell you. |
 | "I'll skip the behaviours I'm not sure how to test." | Mark them ⛔ with a reason. Silence reads as an oversight. |
 | "I should run the suite to prove these pass." | That is `nja-pre-release`. Report how to run them. |
+| "This test needs the record the other spec file creates." | Shards split by file. Seed it in this file, or in the setup project. |
+| "The seed row might be missing, I'll `test.skip` when it is." | A skip hides a broken seed. Fail, then fix or report the seed. |
+| "Shard 2's api is on 3990, I'll hard-code it." | Ports come from `E2E_PORT_BASE` and the runner's per-shard outputs. Read them from the e2e env module. |
 | "The page has 40 behaviours, I'll cover them all." | Propose the list and let the user cut it. Volume is not coverage. |
 
 ## Hands-off

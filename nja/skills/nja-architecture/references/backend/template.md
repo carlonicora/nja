@@ -494,11 +494,13 @@ export class ExampleRepository extends AbstractRepository<Example, typeof Exampl
 ## Service (Complex) - Add custom method
 
 ```typescript
+import { JsonApiListDocument, JsonApiPaginator } from "@carlonicora/nestjs-neo4jsonapi";
+
 @Injectable()
 export class ExampleService extends AbstractService<Example, typeof ExampleDescriptor.relationships> {
   // ... Medium tier code ...
 
-  async findPending(params: { query: any }): Promise<any> {
+  async findPending(params: { query: any }): Promise<JsonApiListDocument> {
     const paginator = new JsonApiPaginator(params.query);
     const data = await this.exampleRepository.findPending({ cursor: paginator.generateCursor() });
     return this.jsonApiService.buildList(ExampleDescriptor.model, data, paginator);

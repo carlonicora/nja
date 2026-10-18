@@ -123,6 +123,11 @@ A page like `/proceedings/[id]` needs a concrete instance, and it must be a
 **fixed seeded id**, never "whatever the list returns first". The suite keeps
 fixed ids in `tests/support/ids.ts` precisely so assertions can name them.
 
+Each spec file owns its data. The runner splits the suite by file across
+shards, each on its own database, so an entry whose Given relies on another
+file's writes fails as soon as the two files land in different shards. Name the
+seed in `_Seed:_` so the file can stand alone.
+
 If the page needs data that no seed provides, say so in pass 1's report as a
 prerequisite — a new seed module is its own piece of work with its own review,
 and discovering it during pass 2 is what turns a test-writing task into a

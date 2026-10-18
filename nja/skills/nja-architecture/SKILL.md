@@ -85,6 +85,17 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 - Use DTOs for request validation
 - Always parameterized Cypher — never string interpolation
 - Controllers call services, never repositories directly
+- A service method that returns a whole JSON:API document declares
+  `Promise<JsonApiSingleDocument>` (from `buildSingle`) or
+  `Promise<JsonApiListDocument>` (from `buildList`), both imported from
+  `@carlonicora/nestjs-neo4jsonapi`. Never `Promise<JsonApiDataInterface>` (that is
+  the serialiser builder type) and never `Promise<any>`. Keep a `| null` union
+  where the method can return null
+- An app that excludes the package `UserModule` (an `Extended*` user module
+  replaces it) MUST also exclude `ResponseLanguageModule` and provide
+  `ResponseLanguageService` from its own user module. `ResponseLanguageModule`
+  imports the package `UserModule`; loaded, it mounts the package user controller
+  beside the extended one and the boot crashes on a duplicate route
 
 ### Frontend (Next.js)
 - Use `callApi()` — never `fetch()` directly
@@ -113,6 +124,33 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
   token depends on — is not guaranteed
 - The `include` pattern MUST cover every directory holding specs. `src/**` alone silently
   drops specs under `scripts/**`, and the suite still reports green
+- Spec files are `*.spec.ts` / `*.spec.tsx` only, and `include` collects only that suffix.
+  A `*.test.*` file never runs: rename it. No config sets `passWithNoTests`, so an
+  `include` that matches nothing fails instead of reporting green with 0 files
+- **The isolation list is computed, never hand-kept.** A spec runs in the `isolated`
+  project (`isolate: true`) when its source contains `vi.mock(`, `vi.doMock(`,
+  `vi.stubGlobal(`, `vi.resetModules(` or `modelRegistry.register(` (a global registry
+  mutation). Each `vitest.config.ts` builds the list when it loads:
+  `const ISOLATED_SPECS = isolatedSpecs({ cwd: __dirname, roots: [<the include roots>], suffix: /\.spec\.tsx?$/ });`
+  from `vitest.isolation.ts`, which is byte-identical in every app. Every other spec runs in
+  the `fast` project (`isolate: false`, one module registry per worker). Write these calls
+  plainly: an alias the regex cannot see puts a registry-swapping spec in `fast`
+- Change env and globals only through `vi.stubEnv()` / `vi.stubGlobal()`. A direct
+  `process.env.X = …` or `global.fetch = …` survives into the next file in a shared worker;
+  the stubs are undone by `unstubEnvs` / `unstubGlobals`
+- Type a mock with `Mocked<T>` / `MockedObject<T>` imported from `vitest`
+  (`import type { Mocked } from "vitest"`), so a method missing from the mock is a type error
+- Time-based code is tested with fake timers (`vi.useFakeTimers()` and
+  `vi.advanceTimersByTime()`), never a real wait or a raised `testTimeout`
+- A web suite running in jsdom with React Testing Library calls `afterEach(cleanup)` in its
+  setup file, so one test's DOM never reaches the next
+- The root `test` script is `turbo run test --concurrency=1`. Suites run with
+  `sequence.shuffle`; a re-run is `turbo run test --force --concurrency=1` (without
+  `--force` turbo replays the cache), and a reproduction uses the printed seed:
+  `vitest run --sequence.seed=<n>`. A failure that passes alone is a leak to fix at its
+  cause. Never a retry, a longer timeout, `test.skip`, `as any` or `@ts-ignore`
+- Every NestJS app's `lint` ends with `&& tsc -p tsconfig.spec.json`, so a spec that does
+  not type-check fails lint
 - **Vitest mocks are strict about exports.** Jest returned `undefined` for a key the factory
   did not declare; Vitest throws `No "X" export is defined on the … mock`. When stubbing a
   large barrel, wrap the factory object in `new Proxy({…}, { has: () => true })` rather than

@@ -21,6 +21,7 @@ In an nja monorepo you can skip most of the interview. Assume, then confirm agai
 - **Drive:** **`playwright-cli`**, never the Playwright library and never a browser MCP. Load the page twice and the session is already logged in. Ask the user for credentials once, then record in the generated skill **only where they live** — the `.env` variable names, or `.env.e2e` — never the values. `.claude/` is tracked in these repos, so a credential written into the generated skill is a credential committed.
 - **Observe:** screenshots, the API's JSON:API response bodies, Cypher against Neo4j, and `docker compose` service logs.
 - **Isolate:** worktrees run their own ports. Check what is already listening with `lsof -iTCP:<port> -sTCP:LISTEN` before starting anything.
+- **e2e shard ports are not the dev stack.** `scripts/e2e.sh` runs its own stacks on `E2E_PORT_BASE` + 10k per shard (api +0, web +1), with its own databases and production builds that it tears down at the end. A listener in that range is an e2e run, often another session's. Never drive it as the app, never record its ports in the generated skill, and never kill it.
 
 **Never kill by process name.** No `pkill -f node`, no `killall node`. Several projects run on this machine with identical command lines. Kill only what this run started, by PID, or by port with `lsof -tiTCP:<port> -sTCP:LISTEN | xargs -r kill` (the bare `-ti :<port>` form also matches UDP holders — see `nja-pre-release`).
 

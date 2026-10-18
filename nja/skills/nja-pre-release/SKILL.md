@@ -36,8 +36,18 @@ Run in this order, stopping at the first red one:
 ```bash
 pnpm lint
 pnpm build
-pnpm test
+pnpm test        # turbo run test --concurrency=1
 ```
+
+`pnpm lint` ends with `tsc -p tsconfig.spec.json` in every NestJS app, so a type
+error in a spec fails lint, not test. Fix it in the spec. `as any` and
+`@ts-ignore` are not fixes.
+
+**Every re-run of the tests is `turbo run test --force --concurrency=1`.**
+Without `--force`, turbo replays the cached result of an unchanged package and
+the "re-run" proves nothing. The suites shuffle files and the tests inside
+them, and vitest prints the seed at the top of each run. Write the seed down
+for every run you report.
 
 On a failure: diagnose it, fix it, then **restart from `pnpm lint`** — not from
 the gate that failed. A fix for a type error routinely trips lint, and a fix for
@@ -59,9 +69,9 @@ look like your fault and are not.
 **Run it only if `scripts/e2e.sh` exists and is executable.** That is the
 detection — not the presence of a `test:e2e` script.
 
-> `pnpm test:e2e` exists in every nja repo and in most of them is
-> `vitest run --passWithNoTests` — it passes without running anything and
-> reports a green e2e that tested nothing. Do not use it as the signal.
+> `pnpm test:e2e` is not the signal. In a repo not yet moved to the sharded
+> runner it can still be `vitest run --passWithNoTests`, which passes without
+> running anything and reports a green e2e that tested nothing.
 >
 > `pnpm e2e:dash` (a360ai) is **not** a runner either. It is an interactive
 > dashboard that serves a page and waits for a human to click Run; it spawns
@@ -70,14 +80,33 @@ detection — not the presence of a `test:e2e` script.
 Detect, do not assume — repos gain e2e suites.
 
 ```bash
-./scripts/e2e.sh          # streams its own [api] [worker] [web] logs
+./scripts/e2e.sh                  # full suite: 3 shards, 3 stacks in parallel
+./scripts/e2e.sh <spec or args>   # scoped run: ONE stack, args go to Playwright
+E2E_SHARDS=<n> ./scripts/e2e.sh   # n stacks; E2E_SHARDS=1 is one stack, full suite
 ```
 
-**It is slow and it is supposed to be.** It recreates a test database, boots the
-full stack on its own dedicated ports, waits for migrations, then runs
-Playwright — 3–5 minutes before the first test in a360ai, then hundreds of
-tests. Let it finish. Do not add your own timeout that fires before it can
-possibly pass, and do not interpret the boot phase as a hang.
+**It is slow and it is supposed to be.** It builds the api once into
+`apps/api/dist-e2e` and the web once per shard, recreates each shard's
+databases, starts each shard's worker alone and waits for its migrations, then
+starts api and web and runs one Playwright shard per stack. In a360ai that is
+3 to 5 minutes before the first test, then hundreds of tests. Let it finish.
+Do not add your own timeout that fires before it can possibly pass, and do not
+read the build or boot phase as a hang.
+
+Every log line carries its shard and process: `[s<k>:api]`, `[s<k>:worker]`,
+`[s<k>:web]`, `[s<k>:pw]` (and `[s<k>:corpus]` in a360ai). At the end the
+runner merges the shards' blob reports into `apps/web/playwright-report` and
+prints each shard's exit code, duration and peak memory, plus the boot and
+total wall time. It exits non-zero when any shard failed, or when the network
+log shows a connection to a host outside loopback and `E2E_ALLOWED_HOSTS`.
+
+**The runner is safe beside the dev stack.** It builds into `dist-e2e` and
+`.next-e2e*`, never into the dev `dist`, `dist-worker` or `.next`. It uses only
+the ports from `E2E_PORT_BASE` (shard k at base + 10k), its own databases and
+its own queue prefixes. It frees a port only when the listener belongs to this
+checkout, aborts with the pid when it does not, and tears down by recorded PID.
+A running dev server does not block it; the preflight stop is about
+`pnpm build`.
 
 **Never fix an e2e failure in this skill.** Diagnose and propose. An e2e test
 asserts product behaviour, and "make the test pass" is frequently the wrong
@@ -107,10 +136,18 @@ it, the fix is to delete `apps/web/.next` and restart dev — the tell is
 `required-server-files.json` sitting in `.next`, which only a production build
 writes.
 
-**A test failure under full-suite load may not be real.** These suites flake
-under contention. Before you treat a red test as a defect, re-run that package
-alone. A failure that passes in isolation is a flake, not a fix target — say so
-in the report rather than "fixing" it.
+**A test that fails in the suite and passes alone is a real defect.** The
+suites shuffle file and test order, and the `fast` project shares one module
+registry across files, so a leak between files shows up as a failure in the
+suite. Check the file against the isolation rule first: a spec whose source
+contains `vi.mock(`, `vi.doMock(`, `vi.stubGlobal(`, `vi.resetModules(` or
+`modelRegistry.register(` must land in the `isolated` project, and
+`vitest.isolation.ts` computes that list from the source. Then reproduce with
+the same seed: `vitest run --sequence.seed=<n>`, or
+`turbo run test --force --concurrency=1` so turbo does not replay a cached run.
+Fix the cause (a direct `process.env` or `global.*` write, a mock set once in
+`beforeAll`, a real wait instead of fake timers). Retries, longer timeouts and
+`test.skip` are not fixes.
 
 **Never kill by name pattern.** `pkill -f`, `killall node` and friends match
 every project on this machine, not just this repo. `scripts/e2e.sh` owns its own
@@ -136,7 +173,9 @@ error count you are about to act on.
 | "`pnpm test:e2e` exists, so I'll run that." | In most of these repos it passes without running anything. Detect `scripts/e2e.sh`. |
 | "e2e has been booting for four minutes, it's stuck." | That is its normal boot. Let it finish. |
 | "I'll just make the e2e assertion match what the app does." | You are erasing the bug the test found. Propose, don't fix. |
-| "One test fails, I'll fix the test." | Re-run it in isolation first. It may be a flake. |
+| "It passed alone, so it's a flake." | It is a leak or an order dependency. Check the isolation rule, re-run with the same seed, fix the cause. |
+| "I'll re-run `pnpm test` to confirm." | Turbo replays the cache. `turbo run test --force --concurrency=1`, and record the seed. |
+| "The dev server is up, so e2e must wait." | The runner builds into `dist-e2e` and uses its own ports. Only `pnpm build` clobbers the dev stack. |
 | "The dev server is in the way, I'll kill it." | Stop and ask. It may be the user's, mid-task. |
 | "I fixed everything; I'll commit so it's tidy." | This skill never commits. The user does. |
 

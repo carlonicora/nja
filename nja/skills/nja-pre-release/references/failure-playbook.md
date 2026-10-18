@@ -36,6 +36,14 @@ ESLint 10 with `@typescript-eslint` v8. `FlatESLint` moved, and v8's transitive
 show this. ESLint is held at `^9.x` for exactly this reason; if someone bumped
 it, that is the bug. See the dependency-sweep hazards, §2.
 
+### `TS2xxx` in a `*.spec.ts` file, from `tsc -p tsconfig.spec.json`
+
+Every NestJS app's `lint` ends with `&& tsc -p tsconfig.spec.json`, so spec
+type errors fail lint. A common one after a package bump is a mock or an
+expectation typed against an old return type. Fix the spec's types. Type mocks
+with `Mocked<T>` (`import type { Mocked } from "vitest"`). Never `as any`, never
+`@ts-ignore`.
+
 ### Lint passes but reports a file path from another checkout
 
 Turbo replayed a cached result produced in a different worktree. Harmless when
@@ -137,9 +145,36 @@ tag>"` already goes through the cached path.
 
 ### A test that fails in the full suite and passes alone
 
-A flake under contention, not a defect. Re-run the package in isolation before
-touching anything. If it passes there, report it as a flake — do not "fix" it,
-and do not let it burn your attempt cap.
+A leak between files or an order dependency, not a flake. The suites run
+`sequence.shuffle`, and the `fast` project runs `isolate: false`, so one file's
+mocks, env or globals reach the next file in the same worker.
+
+1. Check the file, and the files that ran before it, against the isolation
+   rule. A spec whose source contains `vi.mock(`, `vi.doMock(`,
+   `vi.stubGlobal(`, `vi.resetModules(` or `modelRegistry.register(` runs in the
+   `isolated` project. `vitest.isolation.ts` computes the list when the config
+   loads. A spec that reaches one of these through an alias the regex does not
+   match is the bug: write the call plainly.
+2. Re-run with the same seed: `vitest run --sequence.seed=<n>` with the seed the
+   failing run printed, or `turbo run test --force --concurrency=1` so turbo
+   does not replay a cached run.
+3. Fix the cause. `process.env.X = …` becomes `vi.stubEnv`, `global.fetch = …`
+   becomes `vi.stubGlobal`, a mock set once in `beforeAll` moves to the test,
+   a real wait becomes fake timers.
+
+No retries, no raised timeouts, no `test.skip`.
+
+### The second `pnpm test` finishes in seconds
+
+Turbo replayed the cached result: nothing ran. Every re-run is
+`turbo run test --force --concurrency=1`.
+
+### A suite reports green with fewer files than before
+
+The `include` no longer matches. Vitest collects `*.spec.*` only, so a file
+named `*.test.*` never runs, and a suite with no files fails because no config
+sets `passWithNoTests`. Compare file and test counts before and after any
+rename.
 
 ### Failures that were already there
 
@@ -150,7 +185,15 @@ must say it predates this run, because that changes what the user does about it.
 
 ### `UnknownDependenciesException` at startup, in a test that boots a module
 
-Two instances of a peer-fingerprinted package (`@nestjs/common`,
+First case: the missing token is `ResponseLanguageService` (nestjs-neo4jsonapi
+5.4 and later). An app that replaces the package `UserModule` with its own
+`Extended*` user module must also exclude `ResponseLanguageModule`, because
+that module imports the package `UserModule`. Loaded anyway, it mounts the
+package user controller beside the extended one and Fastify crashes on the
+duplicate route. Excluded, it takes the service with it, so the app's own user
+module must provide `ResponseLanguageService`.
+
+Second case: two instances of a peer-fingerprinted package (`@nestjs/common`,
 `@nestjs/core`, `class-validator`, `react`…) in the tree. Unit tests usually
 mock DI and miss it; when one surfaces here it is real. Confirm with the
 dependency doctor — exactly one directory per package under `node_modules/.pnpm`
@@ -169,21 +212,40 @@ will find it by searching — suspect it for any class extending a package class
 
 ## e2e — diagnose, never fix
 
-The runner is `scripts/e2e.sh`. It recreates a dedicated test database, boots
-the stack on its own ports, waits for migrations, then runs Playwright.
+The runner is `scripts/e2e.sh`. With no arguments it starts 3 stacks (shards)
+and splits the spec files between them; with arguments it starts one stack.
+Each shard gets its own databases, queue prefixes, ports
+(`E2E_PORT_BASE + 10k`) and Playwright cwd. It recreates the databases, boots
+the worker and waits for migrations, then starts api and web and runs
+Playwright.
 
 ### Reading a failure
 
 Separate the three things that look alike in the output:
 
 - **Boot failure** — the stack never came up. Every test then fails, and the
-  test names are noise. Read the `[api]` / `[worker]` / `[web]` prefixed lines
-  above the Playwright output; the cause is there, not in the assertions.
+  test names are noise. Read the `[s<k>:api]` / `[s<k>:worker]` /
+  `[s<k>:web]` prefixed lines above the Playwright output; the cause is there,
+  not in the assertions. A failure in one shard only points at that shard's
+  stack.
 - **Fixture / seed drift** — many tests failing on the same missing or changed
   data. One cause, one proposal. Usually a migration or seed changed and the
   fixture did not follow.
 - **A genuine assertion failure** — few tests, unrelated names, specific
   assertions. This is the one that is actually telling you something.
+
+Three runner failures that are not test failures:
+
+- **A spec passes in a scoped run and fails in the sharded run.** It reads data
+  another spec file wrote, and the shards split by file. The fix is a seed the
+  file owns, not a pinned shard.
+- **The runner stops before booting and prints a pid.** Something outside this checkout
+  holds a port in the e2e range: another project, or a worktree under
+  `.claude/worktrees/`. Report the owner (`ps -o args= -p <pid>`). Never kill it.
+- **Exit 1 after green tests, listing remote addresses.** The network log
+  (`net-<k>.log`) saw the api, worker or corpus connect outside loopback to a
+  host not in `E2E_ALLOWED_HOSTS` (default `api.stripe.com`). A credential the
+  runner does not override reached a real third party. Propose the override.
 
 ### Why you propose rather than fix
 
