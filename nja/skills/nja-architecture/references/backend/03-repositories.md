@@ -47,6 +47,7 @@ Read this file when:
 2. **NEVER return raw Neo4j records** - No `result.records[0]`.
 3. **ALWAYS use `{CURSOR}`** for paginated queries.
 4. **Company filtering is automatic** via `buildDefaultMatch()`. For an `isCompanyScoped: false` descriptor the predicate comes from its `tenancy` declaration: `{ via }` walks the named relationship to the owning company (or to the company node itself), `"self"` matches the company node; `"global"` and `"internal"` emit none. Never re-add a company predicate by hand in a query. See [01-entity-basics.md](01-entity-basics.md) § "Company Scope and Tenancy".
+   Hand-written Cypher that links client-supplied ids bypasses the generic writers' company check: call `Neo4jService.validateRelatedNodes()` before writing (`validateExistingNodes()` checks existence only). See [01-entity-basics.md](01-entity-basics.md) § "Relationship Writes: the Company Check".
 5. **ALWAYS extend `AbstractRepository`** - Get company filtering and typed mapping for free.
 6. **Custom Cypher writes to a `"date"` / `"datetime"` field MUST cast the value** — `date(left($v, 10))` or `datetime($v)`. The framework only auto-casts the standard `create`/`put`/`patch` path; ad-hoc `executeInTransaction` blocks bypass it. See [../date-handling.md](../date-handling.md).
 

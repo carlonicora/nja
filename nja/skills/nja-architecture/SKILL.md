@@ -77,6 +77,7 @@ Read `references/anti-patterns.md` first, then the layer-specific reference for 
 - Extend `AbstractRepository` and `AbstractService` — never bypass the framework
 - Use `buildDefaultMatch()` for queries — auto-injects company filtering (security-critical)
 - An `isCompanyScoped: false` entity with a `description` declares `tenancy` (`"global"` | `"self"` | `"internal"` | `{ via }`) — `defineEntity` and the catalog refuse it otherwise (see `references/backend/01-entity-basics.md` § "Company Scope and Tenancy")
+- A second descriptor of a label owned elsewhere (portal projection, count, lookup) declares `isProjection: true` — a registration of the same label with different tenancy throws at boot; hand-written relationship Cypher calls `Neo4jService.validateRelatedNodes` — the generic writers' company check does not run for it (see `references/backend/01-entity-basics.md` § "Relationship Writes: the Company Check")
 - Use `readOne()` / `readMany()` — never return raw `result.records`
 - Use `{CURSOR}` placeholder for paginated queries — never manual `SKIP`/`LIMIT`
 - Pass `serialiser` to `initQuery()` — without it, type mapping fails

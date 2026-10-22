@@ -85,6 +85,8 @@ Read this file when:
 | `UserModule` in an app's foundations exclude list without `ResponseLanguageModule` | `ResponseLanguageModule` imports the package `UserModule` and mounts its controller beside the app's extended one: duplicate-route boot crash. Exclude both and provide `ResponseLanguageService` from the app's user module |
 | A content check on a valid LLM response that triggers `llm.call` again | Quality retry — banned; fix the schema/prompt, demote the check to a logged detector (see backend/06-llm-calls.md § "Retries — failures yes, quality never") |
 | `isCompanyScoped: false` with a `description` and no `tenancy` | Unscoped described entity — every read is a cross-tenant scan and the catalog would list every company's rows; `defineEntity` throws since nestjs-neo4jsonapi 5.0.0 (see backend/01-entity-basics.md § "Company Scope and Tenancy") |
+| A second descriptor of a label owned elsewhere (portal projection, count, lookup) without `isProjection: true` | Boot error since nestjs-neo4jsonapi 6.6.1; before it, the last descriptor loaded set the label's rule and silently downgraded every relationship write to it to existence-only. Mark the non-owner `isProjection: true`; never loosen the owner (see backend/01-entity-basics.md § "Relationship Writes: the Company Check") |
+| Hand-written Cypher linking client-supplied ids with only `validateExistingNodes()` | Links another company's node; call `Neo4jService.validateRelatedNodes()` before writing |
 | `tenancy: "global"` on tenant data "to make it boot" | Declares every company's rows as shared reference data — the leak the rule exists to prevent; use `{ via }` or `"internal"` |
 
 ---

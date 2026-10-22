@@ -49,6 +49,7 @@ Read this file when:
 2. **Metadata file is separate** - JSON:API type, endpoint, Neo4j label in `.meta.ts` file.
 3. **Export both the type and the descriptor** - `export type Example = ...` and `export const ExampleDescriptor = ...`
 4. **An unscoped described entity declares its tenancy** - `isCompanyScoped: false` together with a `description` requires `tenancy` (`"global"` | `"self"` | `"internal"` | `{ via: "<relationship key>" }`). `defineEntity` throws without it and the graph catalog refuses the type at boot (nestjs-neo4jsonapi 5.0.0+).
+5. **A relationship write checks every target against its label's tenancy** - `create`, `put`, `patch` and `addToRelationship` refuse a target id of another company with the same 400 as a missing id (nestjs-neo4jsonapi 6.6.0+). A second descriptor of a label owned elsewhere declares `isProjection: true`, or the app does not boot (6.6.1+). Hand-written relationship Cypher calls `Neo4jService.validateRelatedNodes` itself.
 
 ---
 
@@ -101,6 +102,9 @@ Read this file when:
 | IS the company | `isCompanyScoped: false, tenancy: "self"` |
 | is an auth/ingestion/admin record the assistant must never see | `isCompanyScoped: false, tenancy: "internal"` (not catalogued; reads unchanged) |
 | has no relationship that reaches a company and is not reference data | `"internal"` until a company relationship exists — never `"global"` to make it boot |
+| mixes platform rows (no company edge) with company-owned rows, and a relationship write may link a platform row or one of the caller's own rows, never another company's (the library's `Role`) | `linkScope: "own-or-platform"` on THIS (the target) descriptor — valid only on a company-scoped or `tenancy: { via }` entity; `defineEntity` throws otherwise |
+| has ONE relationship that legitimately crosses tenants (a player's character in the player's company joining a campaign owned by the GM's company; the library's `AiConnection.company`) | `crossCompany: true` on that relationship — the write checks existence only for it |
+| is another descriptor of a label owned by a different descriptor (portal projection, count, OAuth row, lookup) | `isProjection: true`, with a one-line comment naming the owner — the label's relationship rule then comes from the owner only |
 
 ---
 
@@ -111,6 +115,8 @@ Read this file when:
 - Missing `dtoKey` on relationships (defaults to relationship name)
 - Forgetting to export the descriptor type
 - Setting `isCompanyScoped: false` on an entity with a `description` and no `tenancy` (boot error), or declaring `"global"` on tenant data just to make it boot (every company's rows become visible to the assistant)
+- A second descriptor of a label (portal projection, count, lookup) with different tenancy and no `isProjection: true` (boot error since 6.6.1; before it, the looser descriptor silently downgraded the label's relationship check to existence only), or "fixing" that boot error by changing the owner's tenancy to match the projection
+- Writing relationships with hand-written Cypher without calling `Neo4jService.validateRelatedNodes` (the generic writers' company check is bypassed and a client can link another company's node)
 
 ---
 
@@ -299,8 +305,77 @@ Rules:
   supported: give the intermediate entity its own `tenancy` and point `via` at it.
 - `"internal"` keeps the type out of the assistant catalog; its HTTP reads are unchanged, so scope them
   in the repository as before.
-- `tenancy` governs READS through `buildDefaultMatch()`. Write paths of an unscoped entity still match by
-  id; keep an unscoped entity out of `chat.writable` unless its repository guards writes itself.
+- `tenancy` governs READS through `buildDefaultMatch()`. Write paths of an unscoped entity still match the
+  entity itself by id; keep an unscoped entity out of `chat.writable` unless its repository guards writes
+  itself. The relationship TARGETS of a write are checked per target label (see "Relationship Writes"
+  below, nestjs-neo4jsonapi 6.6.0+).
+
+### Relationship Writes: the Company Check
+
+Before 6.6.0 a client-supplied relationship id was linked after an existence check only, so a record could
+be linked to another company's node and that node read back through the link. Since 6.6.0 the generic
+writers of `AbstractRepository` (`create`, `put`, `patch`, `addToRelationship`) check every target id
+against the rule of the target's label before writing:
+
+| Target label | A target id passes when |
+|---|---|
+| company-scoped (`isCompanyScoped: true`, the default) | `(t)-[:BELONGS_TO]->(:Company {id: $companyId})`; a node with several `BELONGS_TO` edges (a user member of several companies) passes when ANY edge matches |
+| `tenancy: "self"` | the target IS the caller's company (`t.id = $companyId`) |
+| `tenancy: { via }` | the target's parent through that ONE hop belongs to the caller's company |
+| `linkScope: "own-or-platform"` | the target is a platform row (no company edge) or one of the caller's own rows |
+| `tenancy: "global"` / `"internal"`, unscoped without `tenancy`, or a label never passed to `defineEntity` (plain-model entities) | it exists |
+
+Existence only, whatever the target label:
+- a relationship flagged `crossCompany: true`;
+- a relationship with a `contextKey` (server-filled from CLS, e.g. the author = caller);
+- the caller's own user id, which is always linkable;
+- a write with no company in context (system jobs, crons): the whole check is existence only.
+
+A refused id gets the SAME 400 as a missing id, so the answer leaks nothing about other companies' ids.
+`addToRelationship` no longer filters targets by the parent's company (a global target can be linked) and
+answers 400 on a missing id.
+
+Hand-written relationship Cypher bypasses the generic writers, so a custom repository that writes
+relationships itself runs the same check first. `Neo4jService.validateRelatedNodes` does it in one read
+query; the company defaults to the one in CLS. `validateExistingNodes` is unchanged (existence only).
+
+```typescript
+await this.neo4j.validateRelatedNodes({
+  nodes: params.proceedingIds.map((id) => ({ id, label: proceedingMeta.labelName })),
+});
+```
+
+**One owner per label: `isProjection`.** `defineEntity` fills a label → tenancy registry
+(`entityTenancyRegistry`); `relatedNodeRuleForLabel(label)` and `relatedNodeRule(rel)` return the rule. A
+descriptor that is ANOTHER VIEW of a label owned by a different descriptor (portal projection, count, OAuth
+row, lookup) declares `isProjection: true` (nestjs-neo4jsonapi 6.6.1+); `defineEntity` then does not register
+the label, so it never decides what a relationship write to that label is checked against. Put a one-line
+comment naming the owner:
+
+```typescript
+isCompanyScoped: false,
+tenancy: "internal",
+// Another view of the label: the CRM Proceeding descriptor sets what a relationship write to it is checked against.
+isProjection: true,
+```
+
+Registering a label again with IDENTICAL tenancy is allowed. Registering it with a different
+`isCompanyScoped` / `tenancy` / `linkScope` / `via` throws at import time, i.e. at boot and when a spec
+imports the descriptor:
+
+```text
+entityTenancyRegistry: label "Proceeding" is registered by "proceedings" and "portal-proceedings" with different tenancy. Mark the descriptor that is another view of the label with isProjection: true.
+```
+
+Fix it by marking the non-owner descriptor `isProjection: true`. Never fix it by changing the owner's tenancy
+to match the projection. Before 6.6.1 the last descriptor registered for a label won, so a looser projection
+loaded after the owner silently turned the label's check into existence only; vitest `fast` projects share
+one module registry per worker, so in tests the clash depended on file order.
+
+Guard it in the app with a label-tenancy spec (a360ai: `apps/api/src/common/tenancy/label-tenancy.spec.ts`):
+import the app's root feature modules as `main.ts` does and assert `relatedNodeRuleForLabel(<label>)` for each
+label that has a projection. A spec that calls `defineEntity` repeatedly with ONE fixture label and different
+tenancy calls `entityTenancyRegistry.unregister(label)` between definitions (in `afterEach`, and inside loops).
 
 ## Field Types
 

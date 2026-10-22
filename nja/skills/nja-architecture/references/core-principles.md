@@ -36,7 +36,7 @@ Read this file **first** before working on any entity. These principles apply to
 
 1. **ALWAYS use framework abstractions** - No exceptions. If you're manually constructing JSON:API structures, you have a bug.
 2. **NEVER return raw Neo4j records** - Repositories return typed objects via `readOne`/`readMany`.
-3. **NEVER bypass company filtering** - Use `buildDefaultMatch()` which auto-injects company scope. An entity that opts out (`isCompanyScoped: false`) and is visible to the assistant declares `tenancy` (see [backend/01-entity-basics.md](backend/01-entity-basics.md) § "Company Scope and Tenancy").
+3. **NEVER bypass company filtering** - Use `buildDefaultMatch()` which auto-injects company scope. An entity that opts out (`isCompanyScoped: false`) and is visible to the assistant declares `tenancy` (see [backend/01-entity-basics.md](backend/01-entity-basics.md) § "Company Scope and Tenancy"). Relationship writes check every target id against its label's tenancy; a second descriptor of a label owned elsewhere declares `isProjection: true` (§ "Relationship Writes: the Company Check").
 4. **NEVER use `fetch()` directly in frontend** - Use `callApi()` which handles rehydration.
 5. **NEVER use `overridesJsonApiCreation`** - Create dedicated relationship methods in models instead.
 

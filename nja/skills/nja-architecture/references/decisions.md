@@ -79,6 +79,7 @@ An unscoped described descriptor must declare `tenancy`: `"global"` (shared refe
 - nestjs-neo4jsonapi 5.0.0 is a major release; every app in the fleet declares `tenancy` on its unscoped described descriptors before bumping
 - `"global"` is a statement, not a bypass: tenant data without a company-reaching relationship is `"internal"` until the relationship exists
 - `tenancy` covers reads; unscoped entities stay out of `chat.writable` unless their repository guards writes
+- Since nestjs-neo4jsonapi 6.6.0 the same declaration also decides what a relationship write may link to: every target id is checked against its label's tenancy (see backend/01-entity-basics.md § "Relationship Writes: the Company Check")
 - `via` is single-hop by design; chains are expressed by giving each intermediate entity its own `tenancy`
 
 ---
