@@ -1,6 +1,6 @@
 ---
 name: nja-verify
-description: Use when auditing uncommitted changes for architecture compliance — before committing, before handing work back to the user, after generating or implementing a module, or whenever asked to verify/audit/review a diff against the nestjs-neo4jsonapi + nextjs-jsonapi architecture rules. Runs a read-only audit of the uncommitted files against the nja-architecture skill and reports each violation with file:line evidence, the rule it breaks and a severity, without fixing anything.
+description: Use when auditing uncommitted changes for architecture compliance — before committing, before handing work back to the user, after generating or implementing a module, or whenever asked to verify/audit/review a diff against the nestjs-neo4jsonapi + nextjs-jsonapi architecture rules. Also audits a saved implementation plan in plan mode (as nja-writing-plan requires before hand-back). Runs a read-only audit of the uncommitted files, or of the plan file, against the nja-architecture skill and reports each violation with file:line evidence, the rule it breaks and a severity, without fixing anything.
 ---
 
 # Architecture audit
@@ -20,6 +20,27 @@ git status --short
 ```
 
 Audit ONLY these files. Anything outside this list is pre-existing — flag it separately, do not block on it.
+
+If the caller hands you a list of files that were already dirty before the work started, exclude them from the scope too.
+
+## Plan mode
+
+Use plan mode when the caller hands you a plan file (and its spec) instead of asking about the working tree. The scope is the plan file, not `git status`. The method, the output format and the hands-off rule are the same; locations are plan-file line numbers (`plan.md:123`).
+
+Audit:
+
+- every code snippet in the plan (type signatures, DTOs, descriptors, Cypher, controller routes, model methods) against the layer reference docs, exactly as if it were code in scope;
+- the "Shared Contracts" / "Canonical names" sections against the relevant Decision Matrix;
+- every recorded decision: it must cite a skill section, or say who decided and when;
+- the "Plan compliance check" section, row by row.
+
+Flag as BLOCKING:
+
+- any choice justified by pointing at existing app or library code instead of a skill section ("mirrors `apps/...`", "same as the existing X repository");
+- any "OK" or "exception" in the compliance check that is not backed by a skill section. "Precedent in existing code" and "documented in a code comment" are not backing;
+- a cited exception (for example `references/backend/03-repositories.md` § "Exception: cross-tenant administrative read repository") whose requirements the plan does not meet in full.
+
+Read the spec only to understand intent. Do not audit the spec.
 
 ## Method (non-negotiable)
 
@@ -62,5 +83,6 @@ End with a summary table:
 | "I know this rule, I'll cite it from memory / CLAUDE.md." | The `nja-architecture` skill is the only authority. Cite by skill-doc path + section, or don't claim it. |
 | "This is close enough to compliant." | Either it matches a canonical example (cite it) or it's a violation. There is no "close enough." |
 | "I'll just fix this one while I'm here." | This pass is hands-off. Report the fix; let the user decide. Fixing mid-audit hides what was wrong. |
+| "The plan says this mirrors existing code, so it is fine." | Existing code is not precedent. A plan choice stands only on a skill section. |
 | "Let me audit the whole repo to be thorough." | Scope is uncommitted changes only. Pre-existing issues are noted separately, never blocking. |
 | "No line number handy, the file is enough." | Evidence requires `file:line` + verbatim code. A claim without it is not reportable. |

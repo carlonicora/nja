@@ -89,17 +89,24 @@ none, write "None — the spec and plan are complete." Do not pad this.>
    > "If the plan contradicts the nja-architecture skill, the skill wins. Flag
    > the contradiction in your hand-off summary; do not silently follow either."
 
-3. **Sub-agents write no tests and run no lint, build, or test commands.** Their
-   job is the implementation code for their task and nothing else.
+3. **Sub-agents write the specs their task lists and run only those spec
+   files** (for example `npx vitest run <file>` inside the package). They never
+   run repo-wide lint, build, or test.
 
 4. **After every task has landed, run once, in order:** lint → build → test
    (commands above). Lint must reach 0 errors; pre-existing warnings are fine.
    Fix any failures yourself and re-run — do not re-dispatch a sub-agent for
-   them. The sub-agents never ran these commands, so a failure here is yours to
-   resolve.
+   them. The sub-agents never ran lint, build, or the full test suite, so a
+   failure here is yours to resolve.
 
-5. **Invoke the `nja-verify` skill** on the resulting diff and report its
-   findings in full, including the severity summary table.
+5. **Audit with a fresh sub-agent, never in your own context.** Dispatch ONE
+   fresh sub-agent (model: opus) to run the `nja-verify` skill on the diff.
+   Give it only the repo root and the "Uncommitted at delegation time" list
+   above to exclude; never your own reasoning about the code. Fix every
+   BLOCKING finding yourself, re-run the affected spec files, then dispatch a
+   NEW fresh auditor. Repeat until no BLOCKING finding remains, max 3 rounds;
+   after that, report whatever remains. DEFENCE-IN-DEPTH and COSMETIC findings
+   are reported, not fixed.
 
 6. **Make no git commits at any point** — no `git add`, no `git commit`, no
    `git push`, not in any sub-agent, not at the end. The user commits after
@@ -107,8 +114,10 @@ none, write "None — the spec and plan are complete." Do not pad this.>
 
 ## Report back
 
-State: which tasks landed, the lint/build/test results, the `nja-verify`
-findings, and anything you flagged in step 2 as a plan/skill contradiction.
+State: which tasks landed, the lint/build/test results, how many audit rounds
+ran in step 5, the final auditor's findings in full (including its severity
+summary table and any BLOCKING finding still open after round 3), and
+anything you flagged in step 2 as a plan/skill contradiction.
 Then stop — the work stays uncommitted for the user to review.
 ````
 
@@ -127,4 +136,5 @@ Report the absolute path, then one line telling the user to paste `@<path>` into
 | Leaving `<api-app>` / `pnpm <filter>` placeholders in the commands | Step 4 has to be copy-pasteable. The fresh session cannot resolve placeholders it has no context for. |
 | Padding "Session decisions" with restated spec content | The section exists for what dies with the conversation. "None" is a valid and common answer. |
 | Softening the protocol to "prefer parallel" or "generally avoid commits" | The six steps are the contract the plan was written against. Reproduce them verbatim. |
+| Letting the coordinator run `nja-verify` in its own context, or only report its findings | The session that wrote the code reads the diff through its own reasoning and misses what it already rationalised. A fresh auditor per round sees only the diff; the coordinator fixes every BLOCKING finding before reporting. |
 | Implementing part of the plan "while you're here" | This skill produces a file. A delegated plan runs in the delegated session, on a clean starting diff. |

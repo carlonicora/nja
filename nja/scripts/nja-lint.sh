@@ -11,11 +11,24 @@
 #   nja-lint.sh              # check files reported by `git status --porcelain`
 #
 # Exit code:
-#   2  at least one BLOCKING violation   (used by the Stop gate to block)
+#   2  at least one BLOCKING violation   (used by the SubagentStop gate to block)
 #   0  no blocking violations (warnings allowed)
 #
-# Escape hatch: add a comment containing `nja-lint-ignore` on a line to skip it.
+# Escape hatches:
+#   • per line: a comment containing `nja-lint-ignore` on a line skips that line.
+#   • per file: `// nja-lint-ignore-file: <name>` within the first 5 lines skips
+#     the rules of a DOCUMENTED exception. Exceptions are documented in the
+#     nja-architecture skill references with a marker line:
+#       <!-- nja-lint-exception: "<name>" files=<glob> rules=<rule-id>,<rule-id> -->
+#     The name must match a marker and the file's basename must match its glob;
+#     otherwise the header itself is a BLOCKING `undocumented-file-exception`.
+#     NJA_LINT_EXCEPTIONS_DIR overrides the directory scanned for markers.
+#
+# Bash 3.2 compatible (macOS /bin/bash): no associative arrays, no mapfile.
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXCEPTIONS_DIR="${NJA_LINT_EXCEPTIONS_DIR:-$SCRIPT_DIR/../skills/nja-architecture/references}"
 
 BLOCKING=0
 WARNINGS=0
@@ -33,8 +46,54 @@ elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   done < <(git status --porcelain | grep -vE '^ ?D ')        # ignore deletions
 fi
 
+# ── documented file-level exceptions ─────────────────────────────────────────
+# One "name<TAB>glob<TAB>rules" row per marker found under EXCEPTIONS_DIR.
+EXCEPTIONS=""
+if [ -d "$EXCEPTIONS_DIR" ]; then
+  EXCEPTIONS=$(grep -rhoE --include='*.md' \
+      '<!--[[:space:]]*nja-lint-exception:[[:space:]]*"[^"]+"[[:space:]]+files=[^[:space:]]+[[:space:]]+rules=[A-Za-z0-9_,-]+[[:space:]]*-->' \
+      "$EXCEPTIONS_DIR" 2>/dev/null |
+    sed -E 's/^<!--[[:space:]]*nja-lint-exception:[[:space:]]*"([^"]+)"[[:space:]]+files=([^[:space:]]+)[[:space:]]+rules=([A-Za-z0-9_,-]+)[[:space:]]*-->$/\1	\2	\3/')
+fi
+
+# Rules skipped for the file being checked, as ",rule,rule," ("" = none).
+SKIP_RULES=""
+
+# resolve_file_exception <file>: set SKIP_RULES from a documented header, or
+# report the header as BLOCKING when it names no documented exception.
+resolve_file_exception() {
+  local f="$1" hdr hln name base row ename eglob erules matched_name=""
+  SKIP_RULES=""
+  hdr=$(head -n 5 "$f" 2>/dev/null | grep -nE 'nja-lint-ignore-file:' | head -1)
+  [ -n "$hdr" ] || return 0
+  hln="${hdr%%:*}"
+  name=$(printf '%s' "${hdr#*:}" | sed -E 's/.*nja-lint-ignore-file:[[:space:]]*//; s/[[:space:]]+$//; s/\.$//; s/[[:space:]]+$//')
+  base=$(basename "$f")
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    ename="${row%%	*}"; row="${row#*	}"
+    eglob="${row%%	*}"; erules="${row#*	}"
+    [ "$ename" = "$name" ] || continue
+    matched_name=1
+    # shellcheck disable=SC2254
+    case "$base" in
+      $eglob) SKIP_RULES=",${erules},"; return 0 ;;
+    esac
+  done <<EOF_EXC
+$EXCEPTIONS
+EOF_EXC
+  if [ -n "$matched_name" ]; then
+    report "$f" "$hln" BLOCKING undocumented-file-exception \
+      "File-level skip \"$name\" is documented for other files only (glob does not match $base); file-level skips must be documented in the nja-architecture skill" "references/backend/03-repositories.md"
+  else
+    report "$f" "$hln" BLOCKING undocumented-file-exception \
+      "File-level skip \"$name\" is not documented; file-level skips must be documented in the nja-architecture skill" "references/backend/03-repositories.md"
+  fi
+}
+
 # ── reporting ────────────────────────────────────────────────────────────────
 report() { # file line severity rule message doc
+  case "$SKIP_RULES" in *",$4,"*) return 0 ;; esac
   printf '%s:%s [%s] %s — %s\n        → %s\n' "$1" "$2" "$3" "$4" "$5" "$6"
   if [ "$3" = "BLOCKING" ]; then BLOCKING=$((BLOCKING + 1)); else WARNINGS=$((WARNINGS + 1)); fi
 }
@@ -61,6 +120,8 @@ check_file() {
     *node_modules/* | */dist/* | */.next/* | *.test.ts | *.test.tsx | *.spec.ts | *.spec.tsx) return 0 ;;
   esac
 
+  resolve_file_exception "$f"
+
   # ── BLOCKING: patterns that are never correct in feature code ──────────────
 
   case "$f" in
@@ -78,8 +139,13 @@ check_file() {
 
   case "$f" in
   *apps/api/src/features/*)
-    flag "$f" 'return[[:space:]]+result\.records|\.records\[[0-9]*\]\.get\(' WARN raw-neo4j-records \
-      "Prefer readOne()/readMany() — verify this returns a typed model, not a raw node" "references/backend/03-repositories.md"
+    # Any `.records` access on a query result (result.records[0], (r.records as any[]).map(),
+    # [...a.records, ...b.records]). Comment lines are ignored.
+    while IFS=: read -r ln _; do
+      [ -n "$ln" ] && report "$f" "$ln" BLOCKING raw-neo4j-records \
+        "Raw Neo4j records — use readOne()/readMany() to return typed models, never .records" "references/backend/03-repositories.md"
+    done < <(grep -nE '\.records([^A-Za-z0-9_$]|$)' "$f" 2>/dev/null | grep -v 'nja-lint-ignore' \
+               | grep -vE '^[0-9]+:[[:space:]]*(//|/\*|\*)')
     flag "$f" '\bSKIP\b[[:space:]]+(\$|\{|[0-9])' BLOCKING manual-pagination \
       "Use the {CURSOR} placeholder, never manual SKIP/LIMIT" "references/backend/03-repositories.md"
     flag "$f" '\.neo4j\.(read|write|run)\(' WARN raw-neo4j-query \
@@ -134,6 +200,7 @@ check_file() {
 
 for f in "${files[@]:-}"; do
   [ -n "$f" ] && check_file "$f"
+  SKIP_RULES=""
 done
 
 echo ""

@@ -16,9 +16,9 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-architecture`** | Before editing or creating any TypeScript file under `apps/api/src/features`, `apps/web/src/features`, or `packages/*/src`. Routes to the layer-specific reference doc (entity, DTO, repository, service, controller, model, interface, service, component) and surfaces the NestJS + Neo4j + JSON:API rules. The single source of truth — the other skills defer to it. |
 | **`nja-generate`** | Creating, scaffolding, or generating a new feature module or entity (backend, frontend, or both). Drives the `generate-module` / `generate-web-module` generators from a single JSON "module shape". |
 | **`nja-arrows`** | Generating modules from an Arrows.app diagram (or any `{nodes, relationships, style}` graph/ER JSON export). Translates the diagram into confirmed `structure/*.json` — asking per node for what the diagram can't encode — then hands off to `nja-generate`. |
-| **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. |
-| **`nja-delegate-implementation`** | Handing a written plan to a fresh session to implement. Writes a temp markdown file that *is* the prompt for that session: `@`-links to the spec and plan, the context that dies with the conversation (session decisions, repo state, resolved commands), and the execution protocol — parallel task dispatch, no per-task tests, one lint/build/test at the end, `nja-verify` audit, no commits. |
-| **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. |
+| **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. Before the plan is handed over, a fresh sub-agent audits it independently. Existing code is not precedent: a pattern already in the repo does not make it correct. |
+| **`nja-delegate-implementation`** | Handing a written plan to a fresh session to implement. Writes a temp markdown file that *is* the prompt for that session: `@`-links to the spec and plan, the context that dies with the conversation (session decisions, repo state, resolved commands), and the execution protocol — parallel task dispatch, implementers write and run only their own task's specs, one lint/build/test at the end, no commits. The final `nja-verify` audit runs in a fresh sub-agent; violations are fixed and re-audited, for at most 3 rounds. |
+| **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. In plan mode it audits a written plan instead of a diff. |
 | **`nja-update-dependencies`** | Updating or upgrading npm dependencies across the monorepo — root, apps, and `packages/*`. Sweeps all three surfaces (workspace manifests, pnpm `catalog:`, and concrete `overrides:` — `ncu` sees only the first), holds back the majors that break this stack, then verifies with lint, build, a real `pnpm dev` boot check, and tests. Leaves everything uncommitted for you to test and commit. |
 | **`nja-update-fleet`** | Updating dependencies across **multiple** nja monorepos at once. Discovers every nja repo on the machine, computes one fleet-wide version set, sweeps and validates both shared libraries against every consumer *before* pushing, releases each library exactly once, then verifies every app with lint, build, tests and a serialized `pnpm dev` boot. Never commits an app repo. |
 | **`nja-handoff`** | Ending a session whose work another agent will continue. Compacts the conversation into a handoff document (saved to the OS temp dir, sensitive data redacted) with a "suggested skills" section, referencing existing artifacts instead of duplicating them. |
@@ -77,8 +77,9 @@ blocks.
 the greppable anti-patterns in `nja-architecture/references/anti-patterns.md`
 (`fetch()` to the app's own API, manual `SKIP/LIMIT`, hand-written Cypher with no
 `buildDefaultMatch()` — a cross-tenant company-scope leak, `asChild`, `@radix-ui` imports,
-controllers importing repositories; plus WARN-level heuristics like raw `result.records`
-access and `@IsString()` on date DTOs).
+controllers importing repositories, any `.records` access on a query result such as
+`result.records[0]` or `(result.records as any[]).map(...)`; plus WARN-level heuristics like
+`@IsString()` on date DTOs).
 Two tiers — **BLOCKING** (calibrated near-zero false positives) and **WARN** (heuristic).
 The `fetch` rule targets only literal own-API calls, so S3 presigned uploads and local
 functions named `fetch()` are not flagged. Run it directly:
@@ -90,11 +91,29 @@ nja/scripts/nja-lint.sh apps/api/src/features/crm/account/repositories/account.r
 
 Suppress a genuine false positive with a comment containing `nja-lint-ignore` on that line.
 
-**3. `Stop` gate** (`hooks/architecture-gate.sh`) — runs `nja-lint` over the uncommitted
-diff when Claude tries to end its turn. If any **BLOCKING** violation remains, it **blocks
-completion** and feeds the violation list back, so a turn cannot be declared "done" with
-mechanical architecture violations in the diff. It's grep-fast (sub-second) — no build or
-tests — and is soft on non-git directories and when warnings are the only finding.
+A whole file can skip rules only when the skill documents the exception. The file carries
+`// nja-lint-ignore-file: <name>` in its first 5 lines, and a reference doc under
+`nja-architecture/references/` carries the matching marker:
+
+```markdown
+<!-- nja-lint-exception: "cross-tenant administrative read repository" files=*.admin.repository.ts rules=raw-neo4j-records,raw-neo4j-query,manual-query-no-company-scope -->
+```
+
+When the name matches and the file's basename matches the glob, only the listed rules are
+skipped for that file. A header that names no documented exception, or sits on a file the
+glob does not match, is itself a **BLOCKING** `undocumented-file-exception`. So a new kind
+of exception needs a skill change first, not just a comment.
+
+**3. `SubagentStop` gate** (`hooks/subagent-architecture-gate.sh`) — runs when a sub-agent
+finishes, and lints only the files that sub-agent edited (the `Edit`/`Write`/`MultiEdit`
+calls in its own transcript; edits made through Bash are not seen). If any **BLOCKING**
+violation remains, it blocks the sub-agent and hands it the violation list as its next
+instruction, so it fixes them before its report reaches you. It blocks at most 3 times per
+sub-agent, then lets it finish. Grep-fast, no build or tests. Turn it off with
+`NJA_GATE_DISABLE=1` or `touch .claude/nja-gate-off` in the checkout.
+
+The main-session `Stop` gate (`hooks/architecture-gate.sh`) is intentionally off: the
+script stays in the repo but is not wired in `hooks.json`.
 
 ## Install
 
@@ -139,9 +158,10 @@ nja/
     ├── .claude-plugin/
     │   └── plugin.json         # plugin manifest
     ├── hooks/
-    │   ├── hooks.json              # PreToolUse + Stop wiring
-    │   ├── remind-architecture.sh  # PreToolUse soft reminder
-    │   └── architecture-gate.sh    # Stop gate (deterministic)
+    │   ├── hooks.json                     # PreToolUse + SubagentStop wiring
+    │   ├── remind-architecture.sh         # PreToolUse soft reminder
+    │   ├── subagent-architecture-gate.sh  # SubagentStop gate (deterministic)
+    │   └── architecture-gate.sh           # main-session Stop gate (not wired, kept off)
     ├── scripts/
     │   ├── nja-lint.sh             # deterministic anti-pattern checker
     │   ├── nja-detect.sh           # "is this an nja project?" guard

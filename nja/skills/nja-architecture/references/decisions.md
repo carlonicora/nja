@@ -10,7 +10,7 @@ related_docs:
   - core-principles
   - anti-patterns
 enforcement: recommended
-last_updated: "2026-10-15"
+last_updated: "2026-10-24"
 ---
 
 # Architecture Decision Records
@@ -18,6 +18,7 @@ last_updated: "2026-10-15"
 ## Contents
 
 - Decision Template
+- ADR-007: Cross-Tenant Administrative Read Repositories
 - ADR-006: Tenancy Declaration for Unscoped Entities
 - ADR-005: RBAC via Neo4j Relationship Patterns
 - ADR-004: JSON:API as API Protocol
@@ -53,6 +54,30 @@ What is the change we're making?
 ### Consequences
 What are the positive and negative results of this decision?
 ```
+
+---
+
+## ADR-007: Cross-Tenant Administrative Read Repositories
+
+**Date:** 2026-10-24
+**Status:** Accepted (decided by the owner)
+
+### Context
+Platform-wide admin reports (analytics, token usage, activation) aggregate across every company and return scalar columns such as counts and sums. `buildDefaultMatch()` and `initQuery()` both scope to the caller's company through CLS, so an administrator who also belongs to a company sees only that company; in the token-usage dashboard this produced empty pages with no error. `readOne()`/`readMany()` cannot map scalar rows. Plans kept copying these files as precedent for ordinary repositories, because no rule said where the exception starts and ends.
+
+### Decision
+One documented file-level exception: a `*.admin.repository.ts` that opens with `// nja-lint-ignore-file: cross-tenant administrative read repository.` and a rationale, seeds its queries with a private `_adminQuery()` instead of `initQuery()`, maps scalar rows by hand into typed shapes, and is reached only through routes guarded by `@UseGuards(AdminJwtAuthGuard, JwtAuthGuard)` + `@Roles(RoleId.Administrator)`. Rows that return nodes still use `readMany()`. The requirements live in [backend/03-repositories.md](backend/03-repositories.md) § "Exception: cross-tenant administrative read repository". No other file-level lint exception is allowed.
+
+### Alternatives Considered
+| Option | Pros | Cons |
+|--------|------|------|
+| One named exception with fixed requirements (chosen) | Matches the existing working files; a linter can check the marker; plans can cite it | Hand-mapped rows lose the serialiser's type mapping |
+| Framework support for scalar rows in `readMany()` | No exception needed | Library change; CLS scoping in `initQuery()` still needs a bypass |
+| No exception, rewrite admin reports | Single rule | Reports would need node-shaped results they do not have |
+
+### Consequences
+- A plan or audit may cite the exception only for files that meet every requirement
+- Existing code that maps `result.records` outside this exception is a violation, not precedent
 
 ---
 

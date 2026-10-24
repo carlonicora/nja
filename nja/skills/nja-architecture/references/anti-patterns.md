@@ -10,7 +10,7 @@ related_docs:
   - backend-03-repositories
   - frontend-03-services
 enforcement: critical
-last_updated: "2026-10-18"
+last_updated: "2026-10-24"
 ---
 
 # Anti-Patterns (DON'T DO THIS)
@@ -50,7 +50,7 @@ Read this file when:
 
 | Code Pattern | Anti-Pattern |
 |--------------|--------------|
-| `result.records[0]` | Returning raw Neo4j records |
+| `result.records[0]` | Returning raw Neo4j records (only exception: [backend/03-repositories.md](backend/03-repositories.md) § "Exception: cross-tenant administrative read repository") |
 | `WHERE company.id = $companyId` (manual) | Manual company filtering |
 | `SKIP ${offset} LIMIT ${limit}` | Manual pagination |
 | `{ data: { type: ..., attributes: ... } }` (manual) | Manual JSON:API construction |
@@ -114,7 +114,7 @@ Read this file when:
 
 | Anti-Pattern | Why It's Wrong | Correct Approach |
 |--------------|---------------|------------------|
-| Returning raw Neo4j records | No type safety, breaks serialization | Use `readOne`/`readMany` with serialiser |
+| Returning raw Neo4j records | No type safety, breaks serialization | Use `readOne`/`readMany` with serialiser. The only allowed exception is [backend/03-repositories.md](backend/03-repositories.md) § "Exception: cross-tenant administrative read repository"; sibling code doing the same is not precedent |
 | Manual company filtering | Security risk, inconsistent | Use `buildDefaultMatch()` |
 | Manual pagination | Inconsistent, error-prone | Use `{CURSOR}` placeholder |
 | Manual JSON:API construction | Breaks spec compliance | Use `JsonApiService.buildSingle/buildList` |
