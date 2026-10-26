@@ -81,3 +81,26 @@ Your own self-audit (step 6) is not enough: you read the plan through the reason
 - If BLOCKING findings remain after round 3, surface them to the user instead of declaring done.
 
 When you hand the plan back to the user, prepend a one-sentence confirmation that the "Plan compliance check" section is present and clean and that the independent plan audit came back with no BLOCKING findings (say in which round). If either surfaced anything you could not resolve, surface it explicitly instead of declaring done.
+
+## Linear (when configured)
+
+After the independent plan audit is clean and before handing the plan back, sync the spec and plan to Linear. Run every command from the repo root.
+
+1. **Check the repo.** Run `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh check`. Exit 2, or `"team": null` in the output, means the repo is not configured: skip this section silently and say nothing about Linear.
+2. **Write the two documents.** For each of the spec and the plan, write a temp file under `${TMPDIR:-/tmp}` whose first line is `Source: <repo-relative path of the file>`, then a blank line, then the file's content verbatim.
+3. **Issue identifier in context** (the session came from `nja-linear-start`): upload both documents to it.
+   - `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh upsert-doc <ID> --title Spec --content-file <spec temp file>`
+   - `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh upsert-doc <ID> --title Plan --content-file <plan temp file>`
+
+   Then hand off: invoke `nja-delegate-implementation` with the spec and plan paths and the Linear issue identifier and URL, as `nja-linear-start` would. Starting an issue takes it all the way to delegation.
+4. **No identifier in context:** ask ONE question, the same draft-and-confirm question `nja-linear-capture` asks. Show:
+   - **Title:** imperative, specific, under ~70 characters.
+   - **Description:** markdown, drafted from the spec's intent section.
+   - **Priority:** proposed, with a one-line reason (Linear's 1 urgent, 2 high, 3 medium, 4 low, 0 none).
+   - **Kind:** `Bug`, `Feature` or `Improvement`, proposed.
+   - **Label:** `Brainstorm`, preset.
+
+   Ask whether to create the issue; Carlo confirms or edits in the same answer.
+   - **Yes:** write the description to a temp file, run `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh create-issue --title "<title>" --description-file <file> --priority <N> --label <kind> --label Brainstorm`, then run both `upsert-doc` commands from step 3 against the new identifier.
+   - **No:** skip.
+5. **Report** the identifier and URL in one line of the hand-back. If any command exits 3, quote its stderr sentence in the hand-back instead; the plan itself is still done.

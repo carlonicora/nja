@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Fake curl for nja/tests/test-linear.sh. Put this directory first on PATH.
+#
+# Understands the subset of curl that nja-linear.sh uses:
+#   -K -                    config on stdin; its `header = "Authorization: X"`
+#                           line is where the key arrives
+#   --data-binary @FILE     the JSON request body
+#   -w FORMAT               write-out trailer; %{http_code} is substituted
+#   anything else           accepted and ignored
+#
+# Records, under $FAKE_LINEAR_DIR:
+#   argv.log    one line per call: the full argv
+#   bodies.log  one line per call: the request body
+#   auth.log    one line per call: the Authorization header value received
+#
+# Replies with $FAKE_LINEAR_DIR/<OperationName>.json, where the operation name
+# comes from `query <Name>` / `mutation <Name>` in the body. The HTTP status is
+# $FAKE_LINEAR_DIR/<OperationName>.status if that file exists, else 200.
+set -uo pipefail
+
+dir="${FAKE_LINEAR_DIR:?FAKE_LINEAR_DIR is not set}"
+printf '%s\n' "$*" >> "$dir/argv.log"
+
+config=""
+body=""
+wfmt=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -K|--config)
+      if [ "${2:-}" = "-" ]; then config="$(cat)"; else config="$(cat "${2:-/dev/null}")"; fi
+      shift 2 ;;
+    --data-binary|--data|-d)
+      case "${2:-}" in
+        @-) body="$(cat)" ;;
+        @*) body="$(cat "${2#@}")" ;;
+        *)  body="${2:-}" ;;
+      esac
+      shift 2 ;;
+    -w|--write-out) wfmt="${2:-}"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+printf '%s\n' "$body" >> "$dir/bodies.log"
+
+# header = "Authorization: VALUE"  — undo curl-config escaping of \" and \\.
+auth="$(printf '%s\n' "$config" | sed -n 's/^header *= *"Authorization: \(.*\)"[[:space:]]*$/\1/p' \
+  | sed -e 's/\\"/"/g' -e 's/\\\\/\\/g')"
+printf '%s\n' "$auth" >> "$dir/auth.log"
+
+name="$(printf '%s' "$body" | jq -r '.query' 2>/dev/null \
+  | grep -oE '(query|mutation)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' | head -n 1 | awk '{print $2}')"
+
+status=200
+[ -f "$dir/$name.status" ] && status="$(tr -d '[:space:]' < "$dir/$name.status")"
+
+if [ -f "$dir/$name.json" ]; then cat "$dir/$name.json"
+else printf '{"errors":[{"message":"fake-linear: no fixture for operation %s"}]}' "$name"; fi
+
+if [ -n "$wfmt" ]; then
+  printf '%b' "${wfmt//%\{http_code\}/$status}"
+fi
+exit 0

@@ -17,13 +17,14 @@ The test for every line you write: **if this conversation vanished, could the ne
 
 ## Step 1 — Collect
 
-Resolve all three before writing anything:
+Resolve items 1–3 before writing anything, and item 4 when it applies:
 
 1. **Spec and plan absolute paths.** Both must exist on disk. If either is missing, ambiguous, or you'd be guessing — STOP and ask the user. Never invent a path; a broken `@`-reference silently gives the fresh session nothing.
 2. **Repo state** — `git rev-parse --show-toplevel` (the repo root — the fresh
    session starts in whatever directory it starts in and cannot infer this),
    `git rev-parse --abbrev-ref HEAD`, and `git status --short`.
 3. **Project commands** — read the root `package.json` scripts for the repo's real lint/build/test commands. Resolve `<api-app>`-style placeholders to actual workspace names.
+4. **Linear issue** — only if a Linear issue identifier is in context (for example passed by `nja-linear-start`): its identifier and URL, plus the script's absolute path, `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh` expanded now and confirmed to exist. The fresh session may not have `CLAUDE_PLUGIN_ROOT` pointing at the same checkout. No identifier in context → skip this item; the Linear parts of the template are left out.
 
 ## Step 2 — Write the file
 
@@ -35,8 +36,8 @@ The file has exactly these five sections, in this order:
 |---|---|
 | Title | `# Implement: <feature>` |
 | Read first | `@`-links to the spec and plan, absolute paths |
-| Context not in either document | Session decisions · repo state · project commands |
-| Execution protocol | The six steps, verbatim from the template below |
+| Context not in either document | Session decisions · repo state · project commands · Linear issue (when one is in context) |
+| Execution protocol | The six steps (seven with a Linear issue), verbatim from the template below |
 | Report back | What the fresh session returns to the user |
 
 ### Template
@@ -72,6 +73,13 @@ none, write "None — the spec and plan are complete." Do not pad this.>
 - Lint: `<resolved command>`
 - Build: `<resolved command>`
 - Test: `<resolved command>`
+
+<Include the Linear issue block only when Step 1 item 4 found an identifier.>
+**Linear issue**
+- Issue: `<identifier>` — <URL>
+- Script: `<absolute path to nja-linear.sh>`
+- Before step 1, run `<script> set-state <identifier> "In Progress"` from the
+  repo root, so the issue shows as being worked on.
 
 ## Execution protocol — follow exactly
 
@@ -112,6 +120,15 @@ none, write "None — the spec and plan are complete." Do not pad this.>
    `git push`, not in any sub-agent, not at the end. The user commits after
    verifying manually.
 
+<Include step 7 only when Step 1 item 4 found an identifier.>
+7. **Update the Linear issue** after step 5, from the repo root. Write a
+   comment to a temp file under `${TMPDIR:-/tmp}` listing the tasks that
+   landed, the lint/build/test results, and every audit finding still open,
+   then run `<absolute path to nja-linear.sh> comment <identifier> --body-file <file>`.
+   Then, only if lint, build and test are green and no BLOCKING finding
+   remains, run `<absolute path to nja-linear.sh> set-state <identifier> "In Review"`.
+   Otherwise leave the issue In Progress.
+
 ## Report back
 
 State: which tasks landed, the lint/build/test results, how many audit rounds
@@ -135,6 +152,6 @@ Report the absolute path, then one line telling the user to paste `@<path>` into
 | Omitting the repo root path | The fresh session starts in an arbitrary directory and cannot infer which repo the plan targets. Without the root it will happily implement into the wrong one. |
 | Leaving `<api-app>` / `pnpm <filter>` placeholders in the commands | Step 4 has to be copy-pasteable. The fresh session cannot resolve placeholders it has no context for. |
 | Padding "Session decisions" with restated spec content | The section exists for what dies with the conversation. "None" is a valid and common answer. |
-| Softening the protocol to "prefer parallel" or "generally avoid commits" | The six steps are the contract the plan was written against. Reproduce them verbatim. |
+| Softening the protocol to "prefer parallel" or "generally avoid commits" | The six steps (seven with a Linear issue) are the contract the plan was written against. Reproduce them verbatim. |
 | Letting the coordinator run `nja-verify` in its own context, or only report its findings | The session that wrote the code reads the diff through its own reasoning and misses what it already rationalised. A fresh auditor per round sees only the diff; the coordinator fixes every BLOCKING finding before reporting. |
 | Implementing part of the plan "while you're here" | This skill produces a file. A delegated plan runs in the delegated session, on a clean starting diff. |

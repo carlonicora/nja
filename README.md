@@ -30,6 +30,10 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-interrogate`** | Adversarial review of a diff, spec, or plan. Several independent reviewers, one synthesised verdict split into act on / consider / noted / dismissed. Never auto-applies. |
 | **`nja-reflect`** | After a session where the same correction had to be given twice. Three parallel reviewers mine the transcript for durable learnings and route each to a concrete skill or reference edit — you approve before anything is written. |
 | **`nja-automate-me`** | Explicitly asked only. Mines your transcripts, auto-memories and CLAUDE.md files for how you actually work, asks a few structured questions, and writes one personal `<handle>-mode` skill to `~/.claude/skills/` — outside this plugin, because it describes a person, not a stack. |
+| **`nja-linear-setup`** | Connecting a repo to Linear, once per repo. Checks the key in `.env`, asks which team to use and writes `LINEAR_TEAM_ID` after you approve, then makes sure the `Bug`, `Feature`, `Improvement`, `Brainstorm` and `Small` labels exist. |
+| **`nja-linear-capture`** | You find something worth doing while working on something else ("save this as a task"). Drafts a Linear issue with a real title and a self-contained description, asks one question to confirm it and choose Brainstorm or Small, and creates it in Todo. Never starts the work. |
+| **`nja-linear-next`** | Asking what to work on ("what's next"). Lists the open issues, in-progress ones first and then by priority, shows whether each Brainstorm issue has its spec and plan, and lets you pick. It never recommends one. |
+| **`nja-linear-start`** | Starting an issue ("start WYR-12"). Moves it to In Progress. A Small issue is analysed, fixed and moved to In Review when its specs pass. A Brainstorm issue resumes at brainstorm, plan or delegate, depending on which of its `Spec` and `Plan` documents already exist. |
 | **`nja-unslop`** | Any prose an agent produces: reports, docs, commit messages, handoffs. Cuts the AI tells. |
 
 `nja-architecture` is the authority; `nja-generate`, `nja-writing-plan`, `nja-verify`,
@@ -53,6 +57,37 @@ the loop afterwards.
 zero-model-context checks the skill drives rather than reimplements. `nja-dev-boot.sh` tears
 the dev stack down by process group, never by name pattern — the same discipline `nja-lint`
 enforces for architecture, applied here to killing processes safely.
+
+## Linear
+
+Four skills make Linear the to-do list of each nja repo: `nja-linear-setup`,
+`nja-linear-capture`, `nja-linear-next` and `nja-linear-start`. They never call Linear
+themselves. Every request goes through `scripts/nja-linear.sh`, which talks to Linear's
+GraphQL API with curl and jq and prints JSON.
+
+Two variables in the repo's root `.env` configure it:
+
+| Variable | Set by | Meaning |
+|---|---|---|
+| `LINEAR_API_KEY` | you, by hand | personal API key for that repo's Linear workspace |
+| `LINEAR_TEAM_ID` | `nja-linear-setup`, after asking | the team new issues are created in |
+
+The key belongs to the repo. The script reads `.env` from the repo root, or from the main
+checkout when run inside a worktree, and nowhere else. It ignores the process
+environment, so a key exported in your shell never reaches another repo's workspace. The
+key never appears on a command line or in any output.
+
+The flow is capture, next, start. `nja-linear-capture` creates the issue in Todo,
+`nja-linear-next` lists the open ones, and `nja-linear-start` moves the chosen issue to In
+Progress. When the work finishes with its checks green (the affected specs for a Small
+issue; lint, build, tests and the architecture audit for a delegated plan), the issue moves
+to In Review; if a check fails it stays In Progress with a comment saying why. You move it to
+Done by hand after testing and committing.
+
+When a Linear issue is in context, `nja-writing-plan` attaches the spec and plan to it as
+`Spec` and `Plan` documents, and `nja-delegate-implementation` tells the fresh session to
+comment on the issue and move it to In Review when its checks pass. In a repo without the
+Linear variables both skills behave as before.
 
 ## Enforcement (hooks + linter)
 
@@ -171,7 +206,8 @@ nja/
     │   ├── nja-dev-boot.sh         # boot/verify/tear down a real `pnpm dev`
     │   ├── nja-fleet-lib.sh        # sourced helpers for the fleet scripts
     │   ├── nja-fleet-survey.sh     # discovers the nja repos on this machine
-    │   └── nja-fleet-waves.sh      # runs a staged command across the fleet
+    │   ├── nja-fleet-waves.sh      # runs a staged command across the fleet
+    │   └── nja-linear.sh           # the only code that talks to Linear's API
     ├── skills/
     │   ├── nja-architecture/   # routing table + references/ + evals/
     │   ├── nja-generate/       # generator workflow + references/
@@ -190,8 +226,14 @@ nja/
     │   ├── nja-unslop/         # cut AI tells from any prose
     │   ├── nja-update-dependencies/  # dependency sweep workflow + references/ + evals/
     │   ├── nja-update-fleet/         # fleet sweep workflow + references/ + evals/
-    │   └── nja-handoff/        # session → handoff document for the next agent
+    │   ├── nja-handoff/        # session → handoff document for the next agent
+    │   ├── nja-linear-setup/   # connect a repo to a Linear team, ensure labels
+    │   ├── nja-linear-capture/ # finding → Linear issue in Todo
+    │   ├── nja-linear-next/    # list open issues, you pick
+    │   └── nja-linear-start/   # issue → In Progress → work → In Review
     └── tests/                  # bash test suite for scripts/*.sh (run.sh, lib.sh, fixtures/)
+        └── fixtures/
+            └── fake-linear/    # fake curl for the nja-linear.sh tests
 ```
 
 ## License
