@@ -16,9 +16,9 @@ any single product. Drop the plugin into any monorepo that consumes both librari
 | **`nja-architecture`** | Before editing or creating any TypeScript file under `apps/api/src/features`, `apps/web/src/features`, or `packages/*/src`. Routes to the layer-specific reference doc (entity, DTO, repository, service, controller, model, interface, service, component) and surfaces the NestJS + Neo4j + JSON:API rules. The single source of truth — the other skills defer to it. |
 | **`nja-generate`** | Creating, scaffolding, or generating a new feature module or entity (backend, frontend, or both). Drives the `generate-module` / `generate-web-module` generators from a single JSON "module shape". |
 | **`nja-arrows`** | Generating modules from an Arrows.app diagram (or any `{nodes, relationships, style}` graph/ER JSON export). Translates the diagram into confirmed `structure/*.json` — asking per node for what the diagram can't encode — then hands off to `nja-generate`. |
-| **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. Before the plan is handed over, a fresh sub-agent audits it independently. Existing code is not precedent: a pattern already in the repo does not make it correct. |
-| **`nja-delegate-implementation`** | Handing a written plan to a fresh session to implement. Writes a temp markdown file that *is* the prompt for that session: `@`-links to the spec and plan, the context that dies with the conversation (session decisions, repo state, resolved commands), and the execution protocol — parallel task dispatch, implementers write and run only their own task's specs, one lint/build/test at the end, no commits. The final `nja-verify` audit runs in a fresh sub-agent; violations are fixed and re-audited, for at most 3 rounds. |
-| **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. In plan mode it audits a written plan instead of a diff. |
+| **`nja-writing-plan`** | Writing an implementation plan. Wraps `superpowers:writing-plans` with architecture compliance: inline citations to canonical examples, a structured self-audit, skill-wins-over-plan dispatch, and an audit step in the final verification task. It reshapes the superpowers output: the execution header becomes the nja contract (all tasks in parallel, tests per task, no review between tasks, one review at the end, no commits), per-task Commit steps go, the execution menu is skipped, and a spec that changes a page in a repo with an e2e suite gets a mandatory e2e task. The final verification task runs a spec review (a fresh sub-agent checks the code against the spec) together with the architecture audit in every review round. Before the plan is handed over, a fresh sub-agent audits it independently. Existing code is not precedent: a pattern already in the repo does not make it correct. |
+| **`nja-delegate-implementation`** | Handing a written plan to a fresh session to implement. Writes a temp markdown file that *is* the prompt for that session: `@`-links to the spec and plan, the context that dies with the conversation (session decisions, repo state, resolved commands), and the execution protocol — parallel task dispatch, implementers write and run only their own task's specs (the e2e implementer writes its specs and runs nothing), one lint/build/test at the end, no commits. The protocol supersedes the plan's header and commit steps. Implementers run on opus and write the failing test first. Every step of the plan's final verification task is kept, the e2e run included. Before the build it checks for a running dev server, and stops only when that server belongs to this checkout. The `nja-verify` audit and the spec review run together in fresh sub-agents in each review round, for at most 3 rounds; if a round changed code, lint/build/test (plus e2e) re-run once. |
+| **`nja-verify`** | Auditing uncommitted changes against the architecture rules — before committing, before handing work back, or after generating/implementing a module. Read-only: it reports violations with evidence, it does not fix them. In plan mode it audits a written plan instead of a diff, and also flags as BLOCKING a plan that has no nja header, keeps the superpowers execution header, contains commit steps, offers an execution menu, lacks a required e2e task, lacks the spec-review step, or runs the audit and the spec review as separate loops instead of together each round. |
 | **`nja-update-dependencies`** | Updating or upgrading npm dependencies across the monorepo — root, apps, and `packages/*`. Sweeps all three surfaces (workspace manifests, pnpm `catalog:`, and concrete `overrides:` — `ncu` sees only the first), holds back the majors that break this stack, then verifies with lint, build, a real `pnpm dev` boot check, and tests. Leaves everything uncommitted for you to test and commit. |
 | **`nja-update-fleet`** | Updating dependencies across **multiple** nja monorepos at once. Discovers every nja repo on the machine, computes one fleet-wide version set, sweeps and validates both shared libraries against every consumer *before* pushing, releases each library exactly once, then verifies every app with lint, build, tests and a serialized `pnpm dev` boot. Never commits an app repo. |
 | **`nja-handoff`** | Ending a session whose work another agent will continue. Compacts the conversation into a handoff document (saved to the OS temp dir, sensitive data redacted) with a "suggested skills" section, referencing existing artifacts instead of duplicating them. |
@@ -43,7 +43,10 @@ prove it works, fix root causes, type discipline, encode lessons in structure, a
 separating shared state when several sessions share one tree.
 
 The plan-driven path runs `nja-writing-plan` → `nja-delegate-implementation` → (fresh
-session) → `nja-verify`.
+session) → `nja-verify`. The plan carries the nja execution contract instead of the
+superpowers one: every implementation task runs in parallel with its own unit tests (the e2e specs run in the final verification), there is no review between
+tasks and no commit, and one review at the end pairs the `nja-verify` audit with a spec
+review against the spec.
 
 The proof path runs `nja-create-verifier` once per repo, then `nja-blast-radius` before a
 package release and `nja-interrogate` on anything you don't trust yet. `nja-reflect` closes
@@ -79,10 +82,12 @@ key never appears on a command line or in any output.
 
 The flow is capture, next, start. `nja-linear-capture` creates the issue in Todo,
 `nja-linear-next` lists the open ones, and `nja-linear-start` moves the chosen issue to In
-Progress. When the work finishes with its checks green (the affected specs for a Small
-issue; lint, build, tests and the architecture audit for a delegated plan), the issue moves
-to In Review; if a check fails it stays In Progress with a comment saying why. You move it to
-Done by hand after testing and committing.
+Progress. When the work finishes with its checks green, the issue moves to In Review. For a
+Small issue that means the affected specs pass. For a delegated plan it means lint, build,
+test and the e2e run are green and no BLOCKING audit finding or spec-review MISSING/WRONG
+remains; the Linear comment lists the e2e and spec-review results with the rest. If a check
+fails the issue stays In Progress with a comment saying why. You move it to Done by hand
+after testing and committing.
 
 When a Linear issue is in context, `nja-writing-plan` attaches the spec and plan to it as
 `Spec` and `Plan` documents, and `nja-delegate-implementation` tells the fresh session to
