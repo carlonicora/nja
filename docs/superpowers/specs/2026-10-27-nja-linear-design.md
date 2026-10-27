@@ -171,7 +171,12 @@ this", "log this for later".
    kind, and asking Brainstorm or Small. Carlo confirms or edits in the same
    answer.
 3. Create the issue in Todo with labels `<kind>` + `Brainstorm|Small`.
-4. Report the identifier and URL, one line.
+4. If the work already has a spec or plan file on disk (written or read in
+   this conversation, or named by Carlo), the issue is Brainstorm without
+   asking, and each file is attached as a `Spec` / `Plan` document right after
+   creation. (Added 2026-10-27 after a capture with a ready spec and plan
+   produced an issue with no documents.)
+5. Report the identifier, URL and attached documents, one line.
 
 Never interrupts the current task beyond that one question, and never starts
 work on the issue.
@@ -244,9 +249,12 @@ from the document's content before continuing, and say so.
 
 One new step after the plan is saved and audited:
 
-- If a Linear issue is in context (the session came from `nja-linear-start`),
-  upsert-doc `Spec` and `Plan` on it. Uploading the spec here, not in
-  `start`, is required because brainstorming never hands control back.
+- If a Linear issue is in context (from `nja-linear-start` or
+  `nja-linear-capture`), upsert-doc `Spec` and `Plan` on it. Uploading the
+  spec here, not in `start`, is required because brainstorming never hands
+  control back. Only when the session ran `nja-linear-start` on that issue
+  does it then invoke `nja-delegate-implementation`; a captured issue is
+  queued work and stops after the upload.
 - If none is in context and the repo is configured, run the same single
   draft-and-confirm question as `nja-linear-capture` (title, description
   from the spec's intent section, proposed priority and kind; the

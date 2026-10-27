@@ -88,11 +88,11 @@ After the independent plan audit is clean and before handing the plan back, sync
 
 1. **Check the repo.** Run `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh check`. Exit 2, or `"team": null` in the output, means the repo is not configured: skip this section silently and say nothing about Linear.
 2. **Write the two documents.** For each of the spec and the plan, write a temp file under `${TMPDIR:-/tmp}` whose first line is `Source: <repo-relative path of the file>`, then a blank line, then the file's content verbatim.
-3. **Issue identifier in context** (the session came from `nja-linear-start`): upload both documents to it.
+3. **Issue identifier in context** (from `nja-linear-start` or `nja-linear-capture`): upload both documents to it.
    - `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh upsert-doc <ID> --title Spec --content-file <spec temp file>`
    - `${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh upsert-doc <ID> --title Plan --content-file <plan temp file>`
 
-   Then hand off: invoke `nja-delegate-implementation` with the spec and plan paths and the Linear issue identifier and URL, as `nja-linear-start` would. Starting an issue takes it all the way to delegation.
+   Then, **only if this session ran `nja-linear-start` on that issue**, hand off: invoke `nja-delegate-implementation` with the spec and plan paths and the Linear issue identifier and URL. Starting an issue takes it all the way to delegation. An issue that came from `nja-linear-capture` is queued work: upload, report, and stop.
 4. **No identifier in context:** ask ONE question, the same draft-and-confirm question `nja-linear-capture` asks. Show:
    - **Title:** imperative, specific, under ~70 characters.
    - **Description:** markdown, drafted from the spec's intent section.
