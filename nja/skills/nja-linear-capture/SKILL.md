@@ -31,9 +31,11 @@ Exit codes: `0` ok, `1` usage, `2` not configured, `3` API error.
      read in this conversation, or one Carlo names (for example "use the
      current spec and plan"). Only files that exist on disk. When there is a
      spec or plan, the issue is Brainstorm; do not ask.
+   - **Images:** every image Carlo gave with the request (a pasted screenshot's
+     file path, or one he names). Each one is attached; never skip one.
 3. **Ask one question.** Show the title, the full description, the priority
    with its reason, the kind, and the files that will be attached as `Spec`
-   and `Plan` (if any), and ask: Brainstorm or Small? (Skip that part when
+   and `Plan` (if any), the images to attach (if any), and ask: Brainstorm or Small? (Skip that part when
    there are documents.) Carlo confirms or edits in the same answer. Apply his
    edits; do not ask again.
 4. **Create.** Write the description to a temp file (`mktemp`), then:
@@ -58,5 +60,15 @@ Exit codes: `0` ok, `1` usage, `2` not configured, `3` API error.
    A plan still being written is attached as it stands; `nja-writing-plan`
    replaces it when the plan is saved, because the identifier is now in
    context.
-6. **Report** one line: identifier, URL, and the documents attached. Then
+6. **Attach images**, if step 2 found any. For each one:
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/scripts/nja-linear.sh" attach-image <ID> \
+     --file "<path>" --alt "<what it shows>"
+   ```
+
+   It uploads the file and appends it to the end of the description. Only
+   png, jpeg, gif and webp are accepted; exit 1 on another type: tell Carlo
+   the file was not attached and why.
+7. **Report** one line: identifier, URL, and the documents and images attached. Then
    resume the interrupted task. Capturing never starts or delegates the work.

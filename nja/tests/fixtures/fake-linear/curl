@@ -6,12 +6,17 @@
 #                           line is where the key arrives
 #   --data-binary @FILE     the JSON request body
 #   -w FORMAT               write-out trailer; %{http_code} is substituted
+#   --upload-file FILE      a PUT to the signed storage URL; the URL and its
+#                           headers arrive as `url =` / `header =` config lines
 #   anything else           accepted and ignored
 #
 # Records, under $FAKE_LINEAR_DIR:
 #   argv.log    one line per call: the full argv
 #   bodies.log  one line per call: the request body
 #   auth.log    one line per call: the Authorization header value received
+#   uploads.log one line per upload: the url, then every header, tab-separated;
+#               the uploaded bytes land in uploaded.bin. Status is upload.status
+#               if that file exists, else 200
 #
 # Replies with $FAKE_LINEAR_DIR/<OperationName>.json, where the operation name
 # comes from `query <Name>` / `mutation <Name>` in the body. The HTTP status is
@@ -24,6 +29,7 @@ printf '%s\n' "$*" >> "$dir/argv.log"
 config=""
 body=""
 wfmt=""
+upload=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -K|--config)
@@ -37,9 +43,20 @@ while [ $# -gt 0 ]; do
       esac
       shift 2 ;;
     -w|--write-out) wfmt="${2:-}"; shift 2 ;;
+    -T|--upload-file) upload="${2:-}"; shift 2 ;;
     *) shift ;;
   esac
 done
+
+if [ -n "$upload" ]; then
+  cp "$upload" "$dir/uploaded.bin"
+  { printf '%s\n' "$config" | sed -n 's/^url *= *"\(.*\)"[[:space:]]*$/\1/p'
+    printf '%s\n' "$config" | sed -n 's/^header *= *"\(.*\)"[[:space:]]*$/\1/p'; } | paste -sd '\t' - >> "$dir/uploads.log"
+  status=200
+  [ -f "$dir/upload.status" ] && status="$(tr -d '[:space:]' < "$dir/upload.status")"
+  [ -n "$wfmt" ] && printf '%b' "${wfmt//%\{http_code\}/$status}"
+  exit 0
+fi
 
 printf '%s\n' "$body" >> "$dir/bodies.log"
 

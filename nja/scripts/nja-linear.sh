@@ -23,6 +23,7 @@
 #   nja-linear.sh get-issue ID
 #   nja-linear.sh upsert-doc ID --title T --content-file F
 #   nja-linear.sh comment ID --body-file F
+#   nja-linear.sh attach-image ID --file F [--alt TEXT]
 #   nja-linear.sh set-state ID "State Name"
 #   nja-linear.sh add-label ID NAME
 #   nja-linear.sh remove-label ID NAME
@@ -55,6 +56,7 @@ nja-linear.sh <command> [args]
   get-issue ID                            one issue with documents and comments
   upsert-doc ID --title T --content-file F
   comment ID --body-file F
+  attach-image ID --file F [--alt TEXT]   upload a png/jpeg/gif/webp and append it to the description
   set-state ID "State Name"
   add-label ID NAME
   remove-label ID NAME
@@ -90,7 +92,7 @@ norm_id() {
 [ $# -gt 0 ] || usage_die "no command given"
 CMD="$1"; shift
 
-ID=""; TITLE=""; FILE=""; PRIORITY=""; LABELS=""; NAME=""
+ID=""; TITLE=""; FILE=""; PRIORITY=""; LABELS=""; NAME=""; ALT=""; MIME=""
 case "$CMD" in
   -h|--help) usage; exit 0 ;;
   check|teams|ensure-labels|list-open)
@@ -133,6 +135,26 @@ case "$CMD" in
       [ -n "$FILE" ] || usage_die "comment needs --body-file"
       require_file --body-file "$FILE"
     fi ;;
+  attach-image)
+    [ $# -ge 1 ] || usage_die "attach-image needs an issue identifier"
+    ID="$(norm_id "$1")" || exit 1; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --file) require_optarg "$1" "$#" "${2:-}"; FILE="$2"; shift 2 ;;
+        --alt)  require_optarg "$1" "$#" "${2:-}"; ALT="$2"; shift 2 ;;
+        *) usage_die "unknown option for attach-image: $1" ;;
+      esac
+    done
+    [ -n "$FILE" ] || usage_die "attach-image needs --file"
+    require_file --file "$FILE"
+    case "$(printf '%s' "${FILE##*.}" | tr '[:upper:]' '[:lower:]')" in
+      png)      MIME=image/png ;;
+      jpg|jpeg) MIME=image/jpeg ;;
+      gif)      MIME=image/gif ;;
+      webp)     MIME=image/webp ;;
+      *) usage_die "attach-image takes a .png, .jpg, .jpeg, .gif or .webp file, got: $FILE" ;;
+    esac
+    [ -n "$ALT" ] || ALT="$(basename "$FILE")" ;;
   set-state|add-label|remove-label)
     [ $# -eq 2 ] || usage_die "$CMD takes an issue identifier and a name"
     ID="$(norm_id "$1")" || exit 1
@@ -231,6 +253,25 @@ api() {
   return 0
 }
 
+# put_file <signed-url> <headers-json> <file> — PUT the file to the storage
+# URL Linear signed. The Linear key is never sent here; the signed URL and its
+# headers reach curl through a config on stdin, never argv. Exits 3 on failure.
+put_file() {
+  local status rc
+  status="$( { printf 'url = "%s"\n' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+               printf '%s' "$2" | jq -r '.[] | (.key + ": " + .value) | gsub("[\r\n]"; "") | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"")
+                 | "header = \"" + . + "\""'
+               printf 'header = "Content-Type: %s"\n' "$MIME"
+               printf 'header = "Cache-Control: public, max-age=31536000"\n'; } \
+    | curl -q -sS --max-time 60 -X PUT -K - --upload-file "$3" -o /dev/null -w '%{http_code}' 2>"$TMP/curl.err")"
+  rc=$?
+  [ "$rc" -eq 0 ] || die 3 "Could not upload the file to Linear's storage (curl exit $rc): $(head -c 200 "$TMP/curl.err" | tr '\n' ' ')"
+  case "$status" in
+    2??) ;;
+    *) die 3 "Linear's storage answered HTTP $status to the upload." ;;
+  esac
+}
+
 # ok_mutation <field> — die 3 unless .data.<field>.success is true.
 ok_mutation() {
   printf '%s' "$RESP" | jq -e --arg f "$1" '.data[$f].success == true' >/dev/null 2>&1 \
@@ -252,6 +293,7 @@ Q_ISSUE='query Issue($id: String!) { issue(id: $id) { id identifier title descri
 Q_DOCCREATE='mutation DocumentCreate($input: DocumentCreateInput!) { documentCreate(input: $input) { success document { id url } } }'
 Q_DOCUPDATE='mutation DocumentUpdate($id: String!, $input: DocumentUpdateInput!) { documentUpdate(id: $id, input: $input) { success document { id url } } }'
 Q_COMMENT='mutation CommentCreate($input: CommentCreateInput!) { commentCreate(input: $input) { success comment { id } } }'
+Q_FILEUPLOAD='mutation FileUpload($size: Int!, $contentType: String!, $filename: String!) { fileUpload(size: $size, contentType: $contentType, filename: $filename) { success uploadFile { uploadUrl assetUrl headers { key value } } } }'
 Q_ISSUEUPDATE='mutation IssueUpdate($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { identifier state { name } labels { nodes { name } } } } }'
 
 # team_lookup — TEAM_JSON is {"id","key","name"} for $TEAM_ID, or empty with
@@ -431,6 +473,28 @@ EOF_LABELS
     api "$(body)"
     ok_mutation commentCreate
     printf '%s' "$RESP" | jq -c '.data.commentCreate.comment | {id}' ;;
+
+  attach-image)
+    need_team
+    fetch_issue
+    size="$(wc -c < "$FILE" | tr -d ' ')"
+    jq -nc --arg q "$Q_FILEUPLOAD" --argjson s "$size" --arg c "$MIME" --arg f "$(basename "$FILE")" \
+      '{query:$q, variables:{size:$s, contentType:$c, filename:$f}}' > "$(body)"
+    api "$(body)"
+    ok_mutation fileUpload
+    upurl="$(printf '%s' "$RESP" | jq -r '.data.fileUpload.uploadFile.uploadUrl // empty')"
+    asset="$(printf '%s' "$RESP" | jq -r '.data.fileUpload.uploadFile.assetUrl // empty')"
+    [ -n "$upurl" ] && [ -n "$asset" ] || die 3 "Linear did not return an upload URL for the file."
+    put_file "$upurl" "$(printf '%s' "$RESP" | jq -c '.data.fileUpload.uploadFile.headers // []')" "$FILE"
+    # The alt text is a single line with no square brackets, so it cannot break the markdown.
+    alt="$(printf '%s' "$ALT" | tr '\n[]' '   ')"
+    jq -nc --arg q "$Q_ISSUEUPDATE" --arg id "$ID" --argjson i "$ISSUE_JSON" --arg a "$alt" --arg u "$asset" \
+      '{query:$q, variables:{id:$id, input:{description:
+        ((($i.description // "") | sub("\\s+$"; "")) as $d
+         | (if $d == "" then "" else $d + "\n\n" end) + "![" + $a + "](" + $u + ")\n")}}}' > "$(body)"
+    api "$(body)"
+    ok_mutation issueUpdate
+    jq -nc --arg id "$ID" --arg u "$asset" '{identifier:$id, assetUrl:$u}' ;;
 
   set-state)
     need_team

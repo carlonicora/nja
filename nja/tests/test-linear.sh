@@ -27,6 +27,7 @@ _lin_fixtures() {
   printf '%s' '{"data":{"documentCreate":{"success":true,"document":{"id":"doc-new","url":"https://linear.app/x/document/new"}}}}' > "$d/DocumentCreate.json"
   printf '%s' '{"data":{"documentUpdate":{"success":true,"document":{"id":"doc-plan","url":"https://linear.app/x/document/plan"}}}}' > "$d/DocumentUpdate.json"
   printf '%s' '{"data":{"commentCreate":{"success":true,"comment":{"id":"c-1"}}}}' > "$d/CommentCreate.json"
+  printf '%s' '{"data":{"fileUpload":{"success":true,"uploadFile":{"uploadUrl":"https://storage.example/put?sig=s1","assetUrl":"https://uploads.linear.app/a/b","headers":[{"key":"x-goog-meta-k","value":"v1"}]}}}}' > "$d/FileUpload.json"
   printf '%s' '{"data":{"issueUpdate":{"success":true,"issue":{"identifier":"WYR-1","state":{"name":"In Review"},"labels":{"nodes":[{"name":"Bug"},{"name":"Small"}]}}}}}' > "$d/IssueUpdate.json"
 }
 
@@ -371,6 +372,45 @@ t_assert_eq '{"identifier":"WYR-1","labels":["Bug"]}' "$_lin_out" "remove_label:
 _lin_run "$_lin_repo" remove-label WYR-1 Nope
 t_assert_eq 3 "$_lin_code" "remove_label: unknown label name exits 3"
 t_assert_eq "0" "$(_lin_count 'IssueUpdate')" "remove_label: unknown label sends no IssueUpdate"
+
+# ── attach_image ─────────────────────────────────────────────────────────────
+t_case attach_image
+_lin_setup
+printf '\211PNG fake bytes' > "$_lin_repo/shot.png"
+_lin_run "$_lin_repo" attach-image wyr-1 --file shot.png --alt "Reply [no links]"
+t_assert_eq 0 "$_lin_code" "attach_image: exit 0"
+t_assert_eq '{"identifier":"WYR-1","assetUrl":"https://uploads.linear.app/a/b"}' "$_lin_out" "attach_image: prints identifier and asset url"
+_lin_b="$(_lin_body 'mutation FileUpload')"
+t_assert_eq "image/png" "$(printf '%s' "$_lin_b" | jq -r '.variables.contentType')" "attach_image: content type from extension"
+t_assert_eq "shot.png" "$(printf '%s' "$_lin_b" | jq -r '.variables.filename')" "attach_image: filename sent"
+t_assert_eq "$(wc -c < "$_lin_repo/shot.png" | tr -d ' ')" "$(printf '%s' "$_lin_b" | jq -r '.variables.size')" "attach_image: size sent as bytes"
+if cmp -s "$_lin_repo/shot.png" "$_lin_fake/uploaded.bin"; then t_pass "attach_image: file uploaded byte-for-byte"
+else t_fail "attach_image: file uploaded byte-for-byte" "uploaded.bin differs"; fi
+_lin_up="$(cat "$_lin_fake/uploads.log" 2>/dev/null)"
+t_assert_contains "$_lin_up" "https://storage.example/put?sig=s1" "attach_image: PUT to the signed url"
+t_assert_contains "$_lin_up" "x-goog-meta-k: v1" "attach_image: signed headers forwarded"
+t_assert_contains "$_lin_up" "Content-Type: image/png" "attach_image: content type header on the PUT"
+t_assert_not_contains "$_lin_up" "lin_abc" "attach_image: key never sent to storage"
+t_assert_not_contains "$(cat "$_lin_fake/argv.log")" "sig=s1" "attach_image: signed url absent from curl argv"
+t_assert_eq "d
+
+![Reply  no links ](https://uploads.linear.app/a/b)
+x" "$(_lin_body 'mutation IssueUpdate' | jq -j '.variables.input.description'; printf x)" "attach_image: image appended to the description"
+_lin_setup
+printf 'x' > "$_lin_repo/shot.JPG"
+printf '403\n' > "$_lin_fake/upload.status"
+_lin_run "$_lin_repo" attach-image WYR-1 --file shot.JPG
+t_assert_eq 3 "$_lin_code" "attach_image: storage error exits 3"
+t_assert_eq "image/jpeg" "$(_lin_body 'mutation FileUpload' | jq -r '.variables.contentType')" "attach_image: upper-case .JPG is jpeg"
+t_assert_eq "0" "$(_lin_count 'IssueUpdate')" "attach_image: failed upload leaves the description alone"
+t_assert_eq "" "$_lin_out" "attach_image: stdout empty on failure"
+_lin_setup
+printf 'x' > "$_lin_repo/notes.txt"
+_lin_run "$_lin_repo" attach-image WYR-1 --file notes.txt
+t_assert_eq 1 "$_lin_code" "attach_image: non-image extension exits 1"
+_lin_run "$_lin_repo" attach-image WYR-1
+t_assert_eq 1 "$_lin_code" "attach_image: missing --file exits 1"
+t_assert_eq "no" "$([ -s "$_lin_fake/argv.log" ] && echo yes || echo no)" "attach_image: no request sent for usage errors"
 
 # ── list_open ────────────────────────────────────────────────────────────────
 t_case list_open
