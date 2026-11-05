@@ -75,8 +75,9 @@ Each library releases from `.github/workflows/release.yml` on push to
    in `<path>/package.json`.
    - If the last commit is not a `chore(release):` one, no release was cut
      (for example a `[skip release]` commit). Say so; the version stays.
-6. Check npm has it: `npm view <package name> version` must equal the new
-   version. If not yet, retry once a minute up to 5 times, then **STOP**.
+6. Do not check npm. Publishing takes about 10 minutes and the commit only
+   needs the version in the repo: once `<path>/package.json` has the new
+   version, go on to step 4.
 
 ## 4. Sync the versions
 
