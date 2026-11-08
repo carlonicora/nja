@@ -373,44 +373,87 @@ _lin_run "$_lin_repo" remove-label WYR-1 Nope
 t_assert_eq 3 "$_lin_code" "remove_label: unknown label name exits 3"
 t_assert_eq "0" "$(_lin_count 'IssueUpdate')" "remove_label: unknown label sends no IssueUpdate"
 
-# ── attach_image ─────────────────────────────────────────────────────────────
-t_case attach_image
+# ── set_description ──────────────────────────────────────────────────────────
+t_case set_description
+_lin_setup
+printf '## What\n\nNew "text" & more\n' > "$_lin_repo/desc.md"
+_lin_run "$_lin_repo" set-description wyr-1 --description-file desc.md
+t_assert_eq 0 "$_lin_code" "set_description: exit 0"
+t_assert_eq '{"identifier":"WYR-1","url":"https://linear.app/x/issue/WYR-1"}' "$_lin_out" "set_description: prints identifier and url"
+_lin_b="$(_lin_body 'mutation IssueUpdate')"
+t_assert_eq "WYR-1" "$(printf '%s' "$_lin_b" | jq -r '.variables.id')" "set_description: upper-cased identifier sent"
+t_assert_eq "$(cat "$_lin_repo/desc.md"; printf x)" "$(printf '%s' "$_lin_b" | jq -j '.variables.input.description'; printf x)" "set_description: file sent verbatim as the description"
+t_assert_eq '["description"]' "$(printf '%s' "$_lin_b" | jq -c '.variables.input | keys')" "set_description: only the description is changed"
+_lin_setup
+printf '{"data":{"issue":null}}' > "$_lin_fake/Issue.json"
+printf 'x' > "$_lin_repo/desc.md"
+_lin_run "$_lin_repo" set-description WYR-9 --description-file desc.md
+t_assert_eq 3 "$_lin_code" "set_description: unknown issue exits 3"
+t_assert_eq "0" "$(_lin_count 'IssueUpdate')" "set_description: unknown issue sends no IssueUpdate"
+_lin_setup
+_lin_run "$_lin_repo" set-description WYR-1
+t_assert_eq 1 "$_lin_code" "set_description: missing --description-file exits 1"
+_lin_run "$_lin_repo" set-description WYR-1 --description-file nope.md
+t_assert_eq 1 "$_lin_code" "set_description: unreadable file exits 1"
+_lin_bounded_exit 1 "set_description: trailing --description-file exits 1, not a hang" 30 -- \
+  bash -c 'cd "$1" && PATH="$2:$PATH" FAKE_LINEAR_DIR="$3" bash "$4" set-description WYR-1 --description-file' _ \
+  "$_lin_repo" "$_lin_fakebin" "$_lin_fake" "$_lin_script"
+t_assert_eq "no" "$([ -s "$_lin_fake/argv.log" ] && echo yes || echo no)" "set_description: no request sent for usage errors"
+
+# ── attach_file ──────────────────────────────────────────────────────────────
+t_case attach_file
 _lin_setup
 printf '\211PNG fake bytes' > "$_lin_repo/shot.png"
-_lin_run "$_lin_repo" attach-image wyr-1 --file shot.png --alt "Reply [no links]"
-t_assert_eq 0 "$_lin_code" "attach_image: exit 0"
-t_assert_eq '{"identifier":"WYR-1","assetUrl":"https://uploads.linear.app/a/b"}' "$_lin_out" "attach_image: prints identifier and asset url"
+_lin_run "$_lin_repo" attach-file wyr-1 --file shot.png --alt "Reply [no links]"
+t_assert_eq 0 "$_lin_code" "attach_file: exit 0"
+t_assert_eq '{"identifier":"WYR-1","assetUrl":"https://uploads.linear.app/a/b","contentType":"image/png","inline":true}' "$_lin_out" "attach_file: prints identifier, asset url, type and inline"
 _lin_b="$(_lin_body 'mutation FileUpload')"
-t_assert_eq "image/png" "$(printf '%s' "$_lin_b" | jq -r '.variables.contentType')" "attach_image: content type from extension"
-t_assert_eq "shot.png" "$(printf '%s' "$_lin_b" | jq -r '.variables.filename')" "attach_image: filename sent"
-t_assert_eq "$(wc -c < "$_lin_repo/shot.png" | tr -d ' ')" "$(printf '%s' "$_lin_b" | jq -r '.variables.size')" "attach_image: size sent as bytes"
-if cmp -s "$_lin_repo/shot.png" "$_lin_fake/uploaded.bin"; then t_pass "attach_image: file uploaded byte-for-byte"
-else t_fail "attach_image: file uploaded byte-for-byte" "uploaded.bin differs"; fi
+t_assert_eq "image/png" "$(printf '%s' "$_lin_b" | jq -r '.variables.contentType')" "attach_file: content type from extension"
+t_assert_eq "shot.png" "$(printf '%s' "$_lin_b" | jq -r '.variables.filename')" "attach_file: filename sent"
+t_assert_eq "$(wc -c < "$_lin_repo/shot.png" | tr -d ' ')" "$(printf '%s' "$_lin_b" | jq -r '.variables.size')" "attach_file: size sent as bytes"
+if cmp -s "$_lin_repo/shot.png" "$_lin_fake/uploaded.bin"; then t_pass "attach_file: file uploaded byte-for-byte"
+else t_fail "attach_file: file uploaded byte-for-byte" "uploaded.bin differs"; fi
 _lin_up="$(cat "$_lin_fake/uploads.log" 2>/dev/null)"
-t_assert_contains "$_lin_up" "https://storage.example/put?sig=s1" "attach_image: PUT to the signed url"
-t_assert_contains "$_lin_up" "x-goog-meta-k: v1" "attach_image: signed headers forwarded"
-t_assert_contains "$_lin_up" "Content-Type: image/png" "attach_image: content type header on the PUT"
-t_assert_not_contains "$_lin_up" "lin_abc" "attach_image: key never sent to storage"
-t_assert_not_contains "$(cat "$_lin_fake/argv.log")" "sig=s1" "attach_image: signed url absent from curl argv"
+t_assert_contains "$_lin_up" "https://storage.example/put?sig=s1" "attach_file: PUT to the signed url"
+t_assert_contains "$_lin_up" "x-goog-meta-k: v1" "attach_file: signed headers forwarded"
+t_assert_contains "$_lin_up" "Content-Type: image/png" "attach_file: content type header on the PUT"
+t_assert_not_contains "$_lin_up" "lin_abc" "attach_file: key never sent to storage"
+t_assert_not_contains "$(cat "$_lin_fake/argv.log")" "sig=s1" "attach_file: signed url absent from curl argv"
 t_assert_eq "d
 
 ![Reply  no links ](https://uploads.linear.app/a/b)
-x" "$(_lin_body 'mutation IssueUpdate' | jq -j '.variables.input.description'; printf x)" "attach_image: image appended to the description"
+x" "$(_lin_body 'mutation IssueUpdate' | jq -j '.variables.input.description'; printf x)" "attach_file: image appended to the description"
 _lin_setup
 printf 'x' > "$_lin_repo/shot.JPG"
 printf '403\n' > "$_lin_fake/upload.status"
-_lin_run "$_lin_repo" attach-image WYR-1 --file shot.JPG
-t_assert_eq 3 "$_lin_code" "attach_image: storage error exits 3"
-t_assert_eq "image/jpeg" "$(_lin_body 'mutation FileUpload' | jq -r '.variables.contentType')" "attach_image: upper-case .JPG is jpeg"
-t_assert_eq "0" "$(_lin_count 'IssueUpdate')" "attach_image: failed upload leaves the description alone"
-t_assert_eq "" "$_lin_out" "attach_image: stdout empty on failure"
+_lin_run "$_lin_repo" attach-file WYR-1 --file shot.JPG
+t_assert_eq 3 "$_lin_code" "attach_file: storage error exits 3"
+t_assert_eq "image/jpeg" "$(_lin_body 'mutation FileUpload' | jq -r '.variables.contentType')" "attach_file: upper-case .JPG is jpeg"
+t_assert_eq "0" "$(_lin_count 'IssueUpdate')" "attach_file: failed upload leaves the description alone"
+t_assert_eq "" "$_lin_out" "attach_file: stdout empty on failure"
 _lin_setup
-printf 'x' > "$_lin_repo/notes.txt"
-_lin_run "$_lin_repo" attach-image WYR-1 --file notes.txt
-t_assert_eq 1 "$_lin_code" "attach_image: non-image extension exits 1"
-_lin_run "$_lin_repo" attach-image WYR-1
-t_assert_eq 1 "$_lin_code" "attach_image: missing --file exits 1"
-t_assert_eq "no" "$([ -s "$_lin_fake/argv.log" ] && echo yes || echo no)" "attach_image: no request sent for usage errors"
+printf '%%PDF-1.4 fake' > "$_lin_repo/Spec v2.pdf"
+_lin_run "$_lin_repo" attach-file WYR-1 --file "Spec v2.pdf"
+t_assert_eq 0 "$_lin_code" "attach_file: pdf exit 0"
+t_assert_eq '{"identifier":"WYR-1","assetUrl":"https://uploads.linear.app/a/b","contentType":"application/pdf","inline":false}' "$_lin_out" "attach_file: pdf is a link, not inline"
+t_assert_eq "application/pdf" "$(_lin_body 'mutation FileUpload' | jq -r '.variables.contentType')" "attach_file: pdf content type"
+t_assert_contains "$(cat "$_lin_fake/uploads.log")" "Content-Type: application/pdf" "attach_file: pdf content type on the PUT"
+t_assert_eq "d
+
+[Spec v2.pdf](https://uploads.linear.app/a/b)
+x" "$(_lin_body 'mutation IssueUpdate' | jq -j '.variables.input.description'; printf x)" "attach_file: non-image appended as a link named after the file"
+_lin_setup
+printf 'plain words\n' > "$_lin_repo/README"
+_lin_run "$_lin_repo" attach-file WYR-1 --file README
+t_assert_eq 0 "$_lin_code" "attach_file: no extension exit 0"
+t_assert_eq "text/plain" "$(_lin_body 'mutation FileUpload' | jq -r '.variables.contentType')" "attach_file: no extension falls back to file --mime-type"
+_lin_setup
+: > "$_lin_repo/empty.png"
+_lin_run "$_lin_repo" attach-file WYR-1 --file empty.png
+t_assert_eq 1 "$_lin_code" "attach_file: empty file exits 1"
+_lin_run "$_lin_repo" attach-file WYR-1
+t_assert_eq 1 "$_lin_code" "attach_file: missing --file exits 1"
+t_assert_eq "no" "$([ -s "$_lin_fake/argv.log" ] && echo yes || echo no)" "attach_file: no request sent for usage errors"
 
 # ── list_open ────────────────────────────────────────────────────────────────
 t_case list_open

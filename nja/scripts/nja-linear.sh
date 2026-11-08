@@ -22,8 +22,9 @@
 #   nja-linear.sh list-open
 #   nja-linear.sh get-issue ID
 #   nja-linear.sh upsert-doc ID --title T --content-file F
+#   nja-linear.sh set-description ID --description-file F
 #   nja-linear.sh comment ID --body-file F
-#   nja-linear.sh attach-image ID --file F [--alt TEXT]
+#   nja-linear.sh attach-file ID --file F [--alt TEXT]
 #   nja-linear.sh set-state ID "State Name"
 #   nja-linear.sh add-label ID NAME
 #   nja-linear.sh remove-label ID NAME
@@ -31,6 +32,8 @@
 #   ID is an issue identifier, case-insensitive (WYR-12, wyr-12).
 #   N is Linear's priority: 0 none, 1 urgent, 2 high, 3 medium, 4 low.
 #   States and labels are resolved by NAME; labels team first, then workspace.
+#   attach-file appends the upload to the end of the description: a png, jpeg,
+#   gif or webp as an inline image, any other file as a link named after it.
 #
 # Exit codes:
 #   0  ok
@@ -55,8 +58,10 @@ nja-linear.sh <command> [args]
   list-open                               open issues (backlog, unstarted, started)
   get-issue ID                            one issue with documents and comments
   upsert-doc ID --title T --content-file F
+  set-description ID --description-file F  replace the issue's description
   comment ID --body-file F
-  attach-image ID --file F [--alt TEXT]   upload a png/jpeg/gif/webp and append it to the description
+  attach-file ID --file F [--alt TEXT]    upload any file and append it to the description
+                                          (images inline, other files as a link)
   set-state ID "State Name"
   add-label ID NAME
   remove-label ID NAME
@@ -113,6 +118,17 @@ case "$CMD" in
     [ -n "$LABELS" ]   || usage_die "create-issue needs at least one --label"
     printf '%s' "$PRIORITY" | grep -qE '^[0-4]$' || usage_die "--priority must be 0-4, got: $PRIORITY"
     require_file --description-file "$FILE" ;;
+  set-description)
+    [ $# -ge 1 ] || usage_die "set-description needs an issue identifier"
+    ID="$(norm_id "$1")" || exit 1; shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --description-file) require_optarg "$1" "$#" "${2:-}"; FILE="$2"; shift 2 ;;
+        *) usage_die "unknown option for set-description: $1" ;;
+      esac
+    done
+    [ -n "$FILE" ] || usage_die "set-description needs --description-file"
+    require_file --description-file "$FILE" ;;
   get-issue)
     [ $# -eq 1 ] || usage_die "get-issue takes exactly one issue identifier"
     ID="$(norm_id "$1")" || exit 1 ;;
@@ -135,24 +151,42 @@ case "$CMD" in
       [ -n "$FILE" ] || usage_die "comment needs --body-file"
       require_file --body-file "$FILE"
     fi ;;
-  attach-image)
-    [ $# -ge 1 ] || usage_die "attach-image needs an issue identifier"
+  attach-file)
+    [ $# -ge 1 ] || usage_die "attach-file needs an issue identifier"
     ID="$(norm_id "$1")" || exit 1; shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --file) require_optarg "$1" "$#" "${2:-}"; FILE="$2"; shift 2 ;;
         --alt)  require_optarg "$1" "$#" "${2:-}"; ALT="$2"; shift 2 ;;
-        *) usage_die "unknown option for attach-image: $1" ;;
+        *) usage_die "unknown option for attach-file: $1" ;;
       esac
     done
-    [ -n "$FILE" ] || usage_die "attach-image needs --file"
+    [ -n "$FILE" ] || usage_die "attach-file needs --file"
     require_file --file "$FILE"
-    case "$(printf '%s' "${FILE##*.}" | tr '[:upper:]' '[:lower:]')" in
-      png)      MIME=image/png ;;
-      jpg|jpeg) MIME=image/jpeg ;;
-      gif)      MIME=image/gif ;;
-      webp)     MIME=image/webp ;;
-      *) usage_die "attach-image takes a .png, .jpg, .jpeg, .gif or .webp file, got: $FILE" ;;
+    [ -s "$FILE" ] || usage_die "--file is empty: $FILE"
+    # Images are embedded inline; everything else becomes a link.
+    INLINE=0
+    case "$(printf '%s' "${FILE##*/}" | sed -n 's/.*\.//p' | tr '[:upper:]' '[:lower:]')" in
+      png)      MIME=image/png;  INLINE=1 ;;
+      jpg|jpeg) MIME=image/jpeg; INLINE=1 ;;
+      gif)      MIME=image/gif;  INLINE=1 ;;
+      webp)     MIME=image/webp; INLINE=1 ;;
+      pdf)      MIME=application/pdf ;;
+      txt|log)  MIME=text/plain ;;
+      md)       MIME=text/markdown ;;
+      csv)      MIME=text/csv ;;
+      json)     MIME=application/json ;;
+      html|htm) MIME=text/html ;;
+      svg)      MIME=image/svg+xml ;;
+      zip)      MIME=application/zip ;;
+      mp4)      MIME=video/mp4 ;;
+      mov)      MIME=video/quicktime ;;
+      webm)     MIME=video/webm ;;
+      docx)     MIME=application/vnd.openxmlformats-officedocument.wordprocessingml.document ;;
+      xlsx)     MIME=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet ;;
+      pptx)     MIME=application/vnd.openxmlformats-officedocument.presentationml.presentation ;;
+      *)        MIME="$(file --brief --mime-type "$FILE" 2>/dev/null)"
+                printf '%s' "$MIME" | grep -qE '^[a-z]+/[A-Za-z0-9.+-]+$' || MIME=application/octet-stream ;;
     esac
     [ -n "$ALT" ] || ALT="$(basename "$FILE")" ;;
   set-state|add-label|remove-label)
@@ -474,7 +508,16 @@ EOF_LABELS
     ok_mutation commentCreate
     printf '%s' "$RESP" | jq -c '.data.commentCreate.comment | {id}' ;;
 
-  attach-image)
+  set-description)
+    need_team
+    fetch_issue
+    jq -nc --arg q "$Q_ISSUEUPDATE" --arg id "$ID" --rawfile d "$FILE" \
+      '{query:$q, variables:{id:$id, input:{description:$d}}}' > "$(body)"
+    api "$(body)"
+    ok_mutation issueUpdate
+    printf '%s' "$ISSUE_JSON" | jq -c '{identifier, url}' ;;
+
+  attach-file)
     need_team
     fetch_issue
     size="$(wc -c < "$FILE" | tr -d ' ')"
@@ -488,13 +531,15 @@ EOF_LABELS
     put_file "$upurl" "$(printf '%s' "$RESP" | jq -c '.data.fileUpload.uploadFile.headers // []')" "$FILE"
     # The alt text is a single line with no square brackets, so it cannot break the markdown.
     alt="$(printf '%s' "$ALT" | tr '\n[]' '   ')"
-    jq -nc --arg q "$Q_ISSUEUPDATE" --arg id "$ID" --argjson i "$ISSUE_JSON" --arg a "$alt" --arg u "$asset" \
+    if [ "$INLINE" = 1 ]; then md="![$alt]($asset)"; else md="[$alt]($asset)"; fi
+    jq -nc --arg q "$Q_ISSUEUPDATE" --arg id "$ID" --argjson i "$ISSUE_JSON" --arg m "$md" \
       '{query:$q, variables:{id:$id, input:{description:
         ((($i.description // "") | sub("\\s+$"; "")) as $d
-         | (if $d == "" then "" else $d + "\n\n" end) + "![" + $a + "](" + $u + ")\n")}}}' > "$(body)"
+         | (if $d == "" then "" else $d + "\n\n" end) + $m + "\n")}}}' > "$(body)"
     api "$(body)"
     ok_mutation issueUpdate
-    jq -nc --arg id "$ID" --arg u "$asset" '{identifier:$id, assetUrl:$u}' ;;
+    jq -nc --arg id "$ID" --arg u "$asset" --arg c "$MIME" --argjson inline "$([ "$INLINE" = 1 ] && echo true || echo false)" \
+      '{identifier:$id, assetUrl:$u, contentType:$c, inline:$inline}' ;;
 
   set-state)
     need_team
