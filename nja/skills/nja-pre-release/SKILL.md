@@ -28,6 +28,11 @@ preflight → lint → build → test → (loop until green) → e2e → report
 - Note whether the tree is dirty. You are about to edit files; the user needs to
   be able to tell your changes from theirs. If it is dirty, say so in the report.
 - Record the repo's ports so every later `lsof` is scoped to this repo.
+- Run `pnpm install --frozen-lockfile`. A pull or a merge can add a dependency
+  to the lockfile without installing it, and lint then fails on a module it
+  cannot find. `--frozen-lockfile` installs what the lockfile says and never
+  rewrites it; if it refuses because the lockfile is out of date, stop and
+  report — that is the user's change to make.
 
 ### 2–4. the fast gates
 

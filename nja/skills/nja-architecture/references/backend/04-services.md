@@ -64,8 +64,9 @@ Read this file when:
 
 | Method | Purpose | Parameters |
 |--------|---------|------------|
-| `find()` | List entities with pagination | `{ query, term?, fetchAll?, orderBy? }` |
+| `find()` | List entities with pagination | `{ query, term?, fetchAll?, sort? }` |
 | `findById()` | Get single entity by ID | `{ id }` |
+| `parseSort()` (protected) | Validate a JSON:API `sort` for a custom list method; 400 when a field is not `sortable` | `(sort?, allow?)` → `SortCriterion[] \| undefined` |
 | `findByRelated()` | Get entities by relationship | `{ relationship, id, query?, ... }` |
 | `createFromDTO()` | Create entity from DTO | `{ data: JsonApiDTOData }` |
 | `putFromDTO()` | Full update entity | `{ data: JsonApiDTOData }` |
@@ -122,9 +123,9 @@ export class GalleryService extends AbstractService<Gallery, typeof GalleryDescr
   }
 
   // Inherited methods available:
-  // - find({ query, term?, fetchAll?, orderBy? })
+  // - find({ query, term?, fetchAll?, sort? })
   // - findById({ id })
-  // - findByRelated({ relationship, id, query?, term?, fetchAll?, orderBy? })
+  // - findByRelated({ relationship, id, query?, term?, fetchAll?, sort? })
   // - createFromDTO({ data: JsonApiDTOData })
   // - putFromDTO({ data: JsonApiDTOData })
   // - patchFromDTO({ data: JsonApiDTOData })

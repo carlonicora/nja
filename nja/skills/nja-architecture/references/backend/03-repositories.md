@@ -13,7 +13,7 @@ related_docs:
   - anti-patterns
   - backend-template
 enforcement: critical
-last_updated: "2026-10-24"
+last_updated: "2026-11-09"
 ---
 
 # Backend: Repositories
@@ -28,8 +28,10 @@ last_updated: "2026-10-24"
 - RELATED FILES
 - Repository Pattern
 - WRONG vs RIGHT Examples
+- List Order
 - Error Handling
 - Exception: cross-tenant administrative read repository
+- Scalar rows: `readScalars()`
 
 ---
 
@@ -46,11 +48,13 @@ Read this file when:
 
 1. **ALWAYS use `readOne` or `readMany`** - They return typed objects, never raw Neo4j records. The only exception is the documented exception below ("Exception: cross-tenant administrative read repository").
 2. **NEVER return raw Neo4j records** - No `result.records[0]`, except the documented exception below ("Exception: cross-tenant administrative read repository").
+   A query that returns no node (counts, sums, distinct values, buckets) uses `readScalars()`, not `result.records`. See "Scalar rows: `readScalars()`" below.
 3. **ALWAYS use `{CURSOR}`** for paginated queries.
 4. **Company filtering is automatic** via `buildDefaultMatch()`. For an `isCompanyScoped: false` descriptor the predicate comes from its `tenancy` declaration: `{ via }` walks the named relationship to the owning company (or to the company node itself), `"self"` matches the company node; `"global"` and `"internal"` emit none. Never re-add a company predicate by hand in a query. See [01-entity-basics.md](01-entity-basics.md) § "Company Scope and Tenancy".
    Hand-written Cypher that links client-supplied ids bypasses the generic writers' company check: call `Neo4jService.validateRelatedNodes()` before writing (`validateExistingNodes()` checks existence only). See [01-entity-basics.md](01-entity-basics.md) § "Relationship Writes: the Company Check".
 5. **ALWAYS extend `AbstractRepository`** - Get company filtering and typed mapping for free.
-6. **Custom Cypher writes to a `"date"` / `"datetime"` field MUST cast the value** — `date(left($v, 10))` or `datetime($v)`. The framework only auto-casts the standard `create`/`put`/`patch` path; ad-hoc `executeInTransaction` blocks bypass it. See [../date-handling.md](../date-handling.md).
+6. **NEVER put request text in an `ORDER BY`** — a list's order comes from `buildListOrderByClause()` (see "List Order" below). Interpolating `params.orderBy` / `?sort=` into Cypher is an injection.
+7. **Custom Cypher writes to a `"date"` / `"datetime"` field MUST cast the value** — `date(left($v, 10))` or `datetime($v)`. The framework only auto-casts the standard `create`/`put`/`patch` path; ad-hoc `executeInTransaction` blocks bypass it. See [../date-handling.md](../date-handling.md).
 
 ---
 
@@ -249,11 +253,45 @@ query.query = `MATCH (n) RETURN n SKIP ${offset} LIMIT ${limit}`;
 // ✅ CORRECT - Using {CURSOR} placeholder
 query.query = `
   MATCH (n:Gallery)
-  ORDER BY n.name
+  ORDER BY n.name, n.id
   {CURSOR}
   RETURN n
 `;  // {CURSOR} replaced with SKIP/LIMIT automatically
 ```
+
+---
+
+## List Order
+
+A custom list method takes `orderByFields?: SortCriterion[]` (validated by the service with
+`this.parseSort(params.sort)`) and builds its ORDER BY with `buildListOrderByClause`:
+
+```typescript
+import { buildListOrderByClause, codeOrderBy, SortCriterion } from "@carlonicora/nestjs-neo4jsonapi";
+
+query.query += `
+  ${this.buildDefaultMatch()}
+  ${this.securityService.userHasAccess({ validator: () => this.buildUserHasAccess() })}
+  MATCH (${galleryMeta.nodeName})<-[:PUBLISHED]-(:User {id: $ownerId})
+  ${buildListOrderByClause({
+    nodeAlias: galleryMeta.nodeName,
+    sort: params.orderByFields,
+    defaultOrderBy: codeOrderBy("gallery.updatedAt DESC"),
+    scoreVariable: params.term ? "score" : undefined,
+  })}
+  {CURSOR}
+  ${this.buildReturnStatement()}
+`;
+```
+
+- The clause goes **after the last filtering MATCH/WHERE and right before `{CURSOR}`**. An ORDER BY
+  above a later MATCH is discarded, so the page comes out unordered.
+- It always ends with `<alias>.id ASC`, so rows with equal values keep their place across pages.
+- With a search, `scoreVariable` keeps relevance order when no sort is chosen, and puts the score
+  after the chosen keys when one is. Carry `score` through every `WITH` between the fulltext call and the clause.
+- `defaultOrderBy` takes only `codeOrderBy("<literal>")`: a code-written string, never request data.
+- A sort field that is not a plain property (a rank, an override) goes in `expressions` as a
+  `codeOrderBy(...)` and is admitted by the service through `parseSort(sort, ["fieldName"])`.
 
 ---
 
@@ -337,6 +375,43 @@ async findSources(params: { excludeUserIds: string[] }): Promise<ActivationSourc
 ```
 
 A repository that misses any requirement is not covered by this exception, and every rule above applies to it in full.
+
+---
+
+## Scalar rows: `readScalars()`
+
+Use it when a query returns no node: counts, sums, distinct values, buckets. `readOne()`/`readMany()` cannot map those rows, because the entity factory expects nodes. Added by the owner on 2026-11-09 (see [../decisions.md](../decisions.md) § "ADR-007").
+
+```typescript
+export type Neo4jScalarRow = Record<string, string | number | boolean | null | string[] | number[] | Neo4jScalarRow>;
+
+Neo4jService.readScalars<T>(params: {
+  query: string;
+  queryParams?: Record<string, unknown>;
+  map: (row: Neo4jScalarRow) => T;
+}): Promise<T[]>
+```
+
+- Each record becomes a plain object. Driver integers become `number`, temporal values become ISO strings (a date is `YYYY-MM-DD`), nested lists and maps are converted the same way.
+- It never replaces `readOne()`/`readMany()`. A query that returns a node still goes through them with a serialiser.
+- It applies no company scope and does not call `initQuery()`: the query runs exactly as given. A query on company-scoped labels is seeded with `initQuery()` and starts from `buildDefaultMatch()` (CRITICAL RULE 4); pass the seed's `query` and `queryParams` to `readScalars()`. `buildDefaultMatch()` needs the `$companyId` parameter and the `company` alias that `initQuery()` binds. Without them the query fails on the missing parameter, or the company predicate matches any company. The linter treats `.neo4j.readScalars(` like any raw query: a file with an inline `MATCH (` and no `buildDefaultMatch()` is `manual-query-no-company-scope`.
+- Cross-tenant admin reports still follow "Exception: cross-tenant administrative read repository" above.
+
+```typescript
+// Count the caller's galleries by status.
+async countByStatus(): Promise<{ status: string; total: number }[]> {
+  const query = this.neo4j.initQuery({ serialiser: GalleryDescriptor.model });
+  query.query += `
+    ${this.buildDefaultMatch()}
+    RETURN ${galleryMeta.nodeName}.status AS status, count(${galleryMeta.nodeName}) AS total
+  `;
+  return this.neo4j.readScalars({
+    query: query.query,
+    queryParams: query.queryParams,
+    map: (row) => ({ status: String(row.status), total: Number(row.total) }),
+  });
+}
+```
 
 ---
 

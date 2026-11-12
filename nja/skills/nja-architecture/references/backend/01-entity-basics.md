@@ -188,7 +188,7 @@ export const GalleryDescriptor = defineEntity<Gallery>()({
 
   // Field definitions (atomic properties stored in Neo4j node)
   fields: {
-    name: { type: "string", required: true },
+    name: { type: "string", required: true, sortable: true }, // list column the API may sort by
     description: { type: "string" },
     samplePhotographs: {
       type: "string[]",
@@ -388,6 +388,14 @@ tenancy calls `entityTenancyRegistry.unregister(label)` between definitions (in 
 | `"datetime"` | Date and time | DateTime |
 | `"string[]"` | Array of strings | List<String> |
 | `"number[]"` | Array of numbers | List<Integer> |
+
+### Sortable fields
+
+`sortable: true` on a field lets a list request sort by it (`?sort=name`, `?sort=-name`). Only
+own stored fields qualify: never a computed value, a linked node's field or AI text. `createdAt`
+and `updatedAt` are always sortable without the flag. A request naming any other field gets a
+400 from `parseJsonApiSort`. Mark a field sortable only when its list column has a header users
+will click, and make sure the label has an index if the list is large.
 
 ### Dates and DateTimes — non-negotiable
 

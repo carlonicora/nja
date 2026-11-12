@@ -90,5 +90,34 @@ export class IgnoredRepository {
 TS
 t_assert_exit 0 "per-line nja-lint-ignore still skips the line" -- bash "$LINT" "$lint_dir/ignored.repository.ts"
 
+# 6. readScalars() is a raw query: without buildDefaultMatch() it has no company scope.
+cat > "$lint_dir/scalars.repository.ts" <<'TS'
+export class ScalarsRepository {
+  async counts() {
+    return this.neo4j.readScalars({
+      query: `MATCH (n:Report) RETURN n.status AS status, count(n) AS total`,
+      map: (row) => ({ status: String(row.status), total: Number(row.total) }),
+    });
+  }
+}
+TS
+lint_out="$(cd "$lint_repo" && bash "$LINT" apps/api/src/features/report/repositories/scalars.repository.ts 2>&1)"
+t_assert_contains "$lint_out" "scalars.repository.ts:4 [BLOCKING] manual-query-no-company-scope" "readScalars with MATCH and no buildDefaultMatch is blocking"
+t_assert_contains "$lint_out" "scalars.repository.ts:3 [WARN] raw-neo4j-query" "readScalars is a raw-neo4j-query warning"
+
+# 6b. the same query scoped with buildDefaultMatch() passes the company-scope check.
+cat > "$lint_dir/scoped.repository.ts" <<'TS'
+export class ScopedRepository {
+  async counts() {
+    return this.neo4j.readScalars({
+      query: `${this.buildDefaultMatch()} MATCH (n)-[:HAS]->(m:Item) RETURN m.status AS status, count(m) AS total`,
+      map: (row) => ({ status: String(row.status), total: Number(row.total) }),
+    });
+  }
+}
+TS
+lint_out="$(cd "$lint_repo" && bash "$LINT" apps/api/src/features/report/repositories/scoped.repository.ts 2>&1)"
+t_assert_not_contains "$lint_out" "manual-query-no-company-scope" "readScalars with buildDefaultMatch is not flagged"
+
 unset NJA_LINT_EXCEPTIONS_DIR
 rm -rf "$lint_repo" "$lint_exc" "$lint_empty"

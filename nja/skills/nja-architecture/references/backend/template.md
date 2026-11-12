@@ -309,9 +309,9 @@ export class ExampleController {
     @Query() query: any,
     @Query("search") search?: string,
     @Query("fetchAll") fetchAll?: boolean,
-    @Query("orderBy") orderBy?: string,
+    @Query("sort") sort?: string,
   ) {
-    return this.crud.findAll(reply, { query, search, fetchAll, orderBy });
+    return this.crud.findAll(reply, { query, search, fetchAll, sort });
   }
 
   @Get(`${exampleMeta.endpoint}/:exampleId`)
@@ -473,16 +473,22 @@ export class ExampleRepository extends AbstractRepository<Example, typeof Exampl
 ## Repository (Complex) - Add custom query
 
 ```typescript
+import { buildListOrderByClause, codeOrderBy, SortCriterion } from "@carlonicora/nestjs-neo4jsonapi";
+
 @Injectable()
 export class ExampleRepository extends AbstractRepository<Example, typeof ExampleDescriptor.relationships> {
   // ... Medium tier code ...
 
-  async findPending(params: { cursor: JsonApiCursorInterface }): Promise<Example[]> {
+  async findPending(params: { cursor: JsonApiCursorInterface; orderByFields?: SortCriterion[] }): Promise<Example[]> {
     const query = this.neo4j.initQuery({ serialiser: ExampleDescriptor.model, cursor: params.cursor });
     query.query = `
       ${this.buildDefaultMatch()}
       WHERE ${exampleMeta.nodeName}.status = 'pending'
-      ORDER BY ${exampleMeta.nodeName}.createdAt DESC
+      ${buildListOrderByClause({
+        nodeAlias: exampleMeta.nodeName,
+        sort: params.orderByFields, // from the service's this.parseSort(params.sort)
+        defaultOrderBy: codeOrderBy("example.createdAt DESC"),
+      })}
       {CURSOR}
       ${this.buildReturnStatement()}
     `;
@@ -500,9 +506,10 @@ import { JsonApiListDocument, JsonApiPaginator } from "@carlonicora/nestjs-neo4j
 export class ExampleService extends AbstractService<Example, typeof ExampleDescriptor.relationships> {
   // ... Medium tier code ...
 
-  async findPending(params: { query: any }): Promise<JsonApiListDocument> {
+  async findPending(params: { query: any; sort?: string }): Promise<JsonApiListDocument> {
+    const orderByFields = this.parseSort(params.sort); // 400 before any query when a field is not sortable
     const paginator = new JsonApiPaginator(params.query);
-    const data = await this.exampleRepository.findPending({ cursor: paginator.generateCursor() });
+    const data = await this.exampleRepository.findPending({ cursor: paginator.generateCursor(), orderByFields });
     return this.jsonApiService.buildList(ExampleDescriptor.model, data, paginator);
   }
 }
@@ -532,8 +539,9 @@ export class ExampleController {
   async findPending(
     @Res() reply: FastifyReply,
     @Query() query: any,
+    @Query("sort") sort?: string,
   ) {
-    const response = await this.exampleService.findPending({ query });
+    const response = await this.exampleService.findPending({ query, sort });
     reply.send(response);
   }
 

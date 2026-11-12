@@ -26,6 +26,7 @@ last_updated: "2026-03-30"
 - DATA ATTRIBUTES FOR STYLING
 - COMPONENT PRIMITIVE MAPPING
 - RADIX → BASE UI NAMING DIFFERENCES
+- LIST COLUMN SORTING
 - RELATED FILES
 
 ---
@@ -257,6 +258,35 @@ If you catch yourself using these names, you're using Radix patterns:
 | `Content` (handles positioning) | `Positioner` + `Popup` (split concerns) |
 | `ScrollArea` inside Select | `Select.ScrollUpArrow` / `Select.ScrollDownArrow` |
 | `ItemIndicator` (inline) | Separate `CheckboxItemIndicator` / `RadioItemIndicator` components |
+
+---
+
+## LIST COLUMN SORTING
+
+Sorting is opt-in per column and runs on the server, so it orders the whole list, not the page.
+
+1. **Backend:** the field is `sortable: true` in the descriptor (see
+   [../backend/01-entity-basics.md](../backend/01-entity-basics.md) § "Sortable fields") and the
+   controller reads `@Query("sort")`.
+2. **Loader:** the service method forwards `sort` (see [03-services.md](03-services.md)), and the
+   list passes it on: `retriever: (params) => GalleryService.findMany(params)`.
+3. **Column:** in the table-structure hook, set `enableSorting: true` on the column. Only an
+   explicit `true` renders the sort button; a missing key or `false` renders a plain header.
+   For `cellDate(...)`, pass `sortable: true`. A column whose label maps to other field names
+   declares `meta: { sortFields: ["lastName", "firstName"] }`.
+4. **Retriever:** `useDataListRetriever({ ..., defaultSort: "-updatedAt" })` shows the server's
+   default order as a muted arrow and never sends it. Two lists of one module on a page each get
+   their own `sortKey`, or their sorts share one address key.
+
+Rules:
+- The sort lives in the page address as `sort[<module or sortKey>]`. It is written with
+  `history.replaceState` and read from `window.location`. Never use `useSearchParams` or
+  `router.replace` for it.
+- A sortable column must have a header label. An icon-only header gets
+  `header: () => <span className="sr-only">{t("...")}</span>`.
+- A list whose rows are all loaded at once (no pagination) sorts in the browser:
+  `<ContentListTable sortMode="client" sortKey="..." />`, optionally with `clientSort(rows, sort)`.
+- Never mark sortable a computed value, a linked entity's field or AI text: the API answers 400.
 
 ---
 

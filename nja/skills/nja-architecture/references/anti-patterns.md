@@ -10,7 +10,7 @@ related_docs:
   - backend-03-repositories
   - frontend-03-services
 enforcement: critical
-last_updated: "2026-10-24"
+last_updated: "2026-11-09"
 ---
 
 # Anti-Patterns (DON'T DO THIS)
@@ -50,7 +50,7 @@ Read this file when:
 
 | Code Pattern | Anti-Pattern |
 |--------------|--------------|
-| `result.records[0]` | Returning raw Neo4j records (only exception: [backend/03-repositories.md](backend/03-repositories.md) § "Exception: cross-tenant administrative read repository") |
+| `result.records[0]` | Returning raw Neo4j records. Rows with no node (counts, sums, distinct values, buckets) use `readScalars()`: [backend/03-repositories.md](backend/03-repositories.md) § "Scalar rows: `readScalars()`" (only exception: § "Exception: cross-tenant administrative read repository") |
 | `WHERE company.id = $companyId` (manual) | Manual company filtering |
 | `SKIP ${offset} LIMIT ${limit}` | Manual pagination |
 | `{ data: { type: ..., attributes: ... } }` (manual) | Manual JSON:API construction |
@@ -114,9 +114,11 @@ Read this file when:
 
 | Anti-Pattern | Why It's Wrong | Correct Approach |
 |--------------|---------------|------------------|
-| Returning raw Neo4j records | No type safety, breaks serialization | Use `readOne`/`readMany` with serialiser. The only allowed exception is [backend/03-repositories.md](backend/03-repositories.md) § "Exception: cross-tenant administrative read repository"; sibling code doing the same is not precedent |
+| Returning raw Neo4j records | No type safety, breaks serialization | Use `readOne`/`readMany` with serialiser. For rows with no node (counts, sums, distinct values, buckets) use `readScalars()`, see [backend/03-repositories.md](backend/03-repositories.md) § "Scalar rows: `readScalars()`". The only allowed exception is [backend/03-repositories.md](backend/03-repositories.md) § "Exception: cross-tenant administrative read repository"; sibling code doing the same is not precedent |
 | Manual company filtering | Security risk, inconsistent | Use `buildDefaultMatch()` |
 | Manual pagination | Inconsistent, error-prone | Use `{CURSOR}` placeholder |
+| Request text in `ORDER BY` (`ORDER BY n.${params.orderBy}`) | Cypher injection; unvalidated fields | `parseSort()` in the service, `buildListOrderByClause()` in the repository — see [backend/03-repositories.md](backend/03-repositories.md) § "List Order" |
+| `ORDER BY` above a later filtering `MATCH` | Neo4j drops the order; pages come out unordered | Put the clause after the last MATCH/WHERE, right before `{CURSOR}` |
 | Manual JSON:API construction | Breaks spec compliance | Use `JsonApiService.buildSingle/buildList` |
 | Not extending AbstractRepository | Loses company filtering, typed mapping | Always extend `AbstractRepository` |
 | Not extending AbstractService | Loses DTO handling, JSON:API building | Always extend `AbstractService` |

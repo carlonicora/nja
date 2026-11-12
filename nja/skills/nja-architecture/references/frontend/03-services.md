@@ -136,11 +136,14 @@ export class GalleryService extends AbstractService {
   static async findMany(params: {
     search?: string;
     fetchAll?: boolean;
+    /** JSON:API sort (`name`, `-updatedAt`), validated by the API. */
+    sort?: string;
   } = {}): Promise<GalleryInterface[]> {
     const endpoint = new EndpointCreator({ endpoint: Modules.Gallery });
 
     if (params.fetchAll) endpoint.addAdditionalParam("fetchAll", "true");
     if (params.search) endpoint.addAdditionalParam("search", params.search);
+    if (params.sort) endpoint.addAdditionalParam("sort", params.sort);
 
     return this.callApi({
       type: Modules.Gallery,

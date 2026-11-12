@@ -174,10 +174,13 @@ export class GalleryController {
     @Query() query: any,
     @Query("search") search?: string,
     @Query("fetchAll") fetchAll?: boolean,
-    @Query("orderBy") orderBy?: string,
+    @Query("sort") sort?: string,
   ) {
-    return this.crud.findAll(reply, { query, search, fetchAll, orderBy });
+    return this.crud.findAll(reply, { query, search, fetchAll, sort });
   }
+  // `sort` is the JSON:API sort (`?sort=-createdAt,name`). The service validates it against the
+  // descriptor's `sortable: true` fields (plus createdAt / updatedAt) and answers 400 for anything
+  // else. Never read `?orderBy=`: it is the legacy single-field form, kept only for old callers.
 
   // GET /galleries/:id
   @Get(`${galleryMeta.endpoint}/:galleryId`)
@@ -229,7 +232,7 @@ export class GalleryController {
     @Query() query: any,
     @Query("search") search?: string,
     @Query("fetchAll") fetchAll?: boolean,
-    @Query("orderBy") orderBy?: string,
+    @Query("sort") sort?: string,
   ) {
     return this.relationships.findByRelated(reply, {
       relationship: GalleryDescriptor.relationshipKeys.owner,
@@ -237,7 +240,7 @@ export class GalleryController {
       query,
       search,
       fetchAll,
-      orderBy,
+      sort,
     });
   }
 }

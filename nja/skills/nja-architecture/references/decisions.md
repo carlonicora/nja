@@ -10,7 +10,7 @@ related_docs:
   - core-principles
   - anti-patterns
 enforcement: recommended
-last_updated: "2026-10-24"
+last_updated: "2026-11-09"
 ---
 
 # Architecture Decision Records
@@ -72,7 +72,7 @@ One documented file-level exception: a `*.admin.repository.ts` that opens with `
 | Option | Pros | Cons |
 |--------|------|------|
 | One named exception with fixed requirements (chosen) | Matches the existing working files; a linter can check the marker; plans can cite it | Hand-mapped rows lose the serialiser's type mapping |
-| Framework support for scalar rows in `readMany()` | No exception needed | Library change; CLS scoping in `initQuery()` still needs a bypass |
+| Framework support for scalar rows in `readMany()` | No exception needed | Library change; CLS scoping in `initQuery()` still needs a bypass. Scalar-row support now exists as `Neo4jService.readScalars()` (owner, 2026-11-09), see [backend/03-repositories.md](backend/03-repositories.md) § "Scalar rows: `readScalars()`". It applies no company scope, so cross-tenant reports still use this exception |
 | No exception, rewrite admin reports | Single rule | Reports would need node-shaped results they do not have |
 
 ### Consequences

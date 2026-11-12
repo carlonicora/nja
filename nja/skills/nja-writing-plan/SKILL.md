@@ -45,6 +45,7 @@ This skill is the plan-writing wrapper for this project. It does NOT replace `su
    - A row may say OK only by citing a skill section. "Precedent in existing code" or "documented in a code comment" is never a valid justification; a row that has nothing better is a violation or a question for the user (step 3).
    - Reshape (step 10): filled in after step 10 has run (this audit runs before the plan is saved, step 10 after superpowers saves it); one row confirming superpowers' `> **For agentic workers:**` header was replaced with the nja header, and one row confirming no task has a "Commit" step and the plan never says "frequent commits".
    - E2E task (step 11): one row confirming the e2e task is present, or stating why it is not applicable (the spec changes no page, route or rendered component, or the repo has no e2e suite).
+   - Readiness (step 12): one row confirming no step leaves a decision to the implementer, and one row listing how many existing paths and symbols the plan names and confirming each was checked against the repo.
    - If the audit surfaces a contradiction, fix the plan and re-run the audit — do not save a plan with known violations.
 
 ---
@@ -103,6 +104,16 @@ This skill is the plan-writing wrapper for this project. It does NOT replace `su
 
 ---
 
+## Plan readiness
+
+12. **Readiness.** A fresh session executes the plan with only the spec and the plan in hand. Anything the plan leaves open, that session decides alone.
+
+    a. **No decision left to the implementer.** Every step names the file, the symbol and the change. A step such as "update the account service" or "handle the error case" that needs a choice the plan does not make is incomplete. Make the choice in the plan, or ask the user (step 3) and record the answer.
+
+    b. **The plan matches the code as it is today.** Every file the plan lists is marked `Create`, `Modify` or `Delete`. Every `Modify` or `Delete` path, and every file, function, endpoint, descriptor or relationship the plan says exists now, exists in the repo; check each one before saving. Every statement about current behaviour matches the code it describes.
+
+---
+
 ## Now invoke the plan writer
 
 After absorbing the rules above, invoke `superpowers:writing-plans` to produce the plan body. Apply every rule above throughout — they are not advisory, they are the success criteria. Its Plan Document Header, per-task Commit steps and Execution Handoff menu are replaced by step 10 (Reshape the superpowers output).
@@ -112,10 +123,11 @@ After absorbing the rules above, invoke `superpowers:writing-plans` to produce t
 Your own self-audit (step 6) is not enough: you read the plan through the reasoning that wrote it. After step 10 (reshape) has been applied and the self-audit's reshape rows are filled in, and before handing the plan back:
 
 - Dispatch ONE fresh sub-agent (model: opus) that invokes the `nja-verify` skill in plan mode on the saved plan file. Give it only the plan path, the spec path and the repo root (it must judge whether the repo has an e2e suite), never your reasoning.
+- Compare the auditor's paraphrase (its "What this plan builds" section) with the spec. If it describes something the spec does not ask for, or misses something the spec does ask for, the plan is unclear where the auditor misread it. Treat each mismatch as BLOCKING and rewrite that part of the plan.
 - Fix every BLOCKING finding in the plan, then dispatch a NEW fresh auditor. Repeat until clean, max 3 rounds.
 - If BLOCKING findings remain after round 3, surface them to the user instead of declaring done.
 
-When you hand the plan back to the user, prepend a one-sentence confirmation that the "Plan compliance check" section is present and clean and that the independent plan audit came back with no BLOCKING findings (say in which round), and that the reshape in step 10 was applied (nja header in place, no commit steps, no Execution Handoff menu). If either surfaced anything you could not resolve, surface it explicitly instead of declaring done.
+When you hand the plan back to the user, prepend a one-sentence confirmation that the "Plan compliance check" section is present and clean and that the independent plan audit came back with no BLOCKING findings and a paraphrase that matches the spec (say in which round), and that the reshape in step 10 was applied (nja header in place, no commit steps, no Execution Handoff menu). If either surfaced anything you could not resolve, surface it explicitly instead of declaring done.
 
 ## Linear (when configured)
 
