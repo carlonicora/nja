@@ -1,6 +1,6 @@
 ---
 name: nja-writing-plan
-description: Use when about to write an implementation plan in this project — typically right after brainstorming finishes a spec, or when the brainstorming flow asks if it should write the plan, or when the user asks for a plan. Wraps superpowers:writing-plans with nja-architecture compliance — it enforces inline citations to canonical examples, a structured self-audit before the plan is saved, skill-wins-over-plan in sub-agent dispatch, and an architecture audit step inside the final verification task. Also reshapes the superpowers output into the nja execution contract (parallel tasks, no per-task review, no commits), adds a mandatory e2e task when a page changes in a repo with an e2e suite, and adds a spec review to the final verification task.
+description: Use when about to write an implementation plan in this project — typically right after brainstorming finishes a spec, or when the brainstorming flow asks if it should write the plan, or when the user asks for a plan. Wraps superpowers:writing-plans with nja-architecture compliance — it enforces inline citations to canonical examples, a rules check before the plan is saved, skill-wins-over-plan in sub-agent dispatch, and an architecture audit step inside the final verification task. Also reshapes the superpowers output into the nja execution contract (parallel tasks, no per-task review, no commits), adds a mandatory e2e task when a page changes in a repo with an e2e suite, and adds a spec review to the final verification task.
 ---
 
 # Writing plans (nja)
@@ -36,17 +36,7 @@ This skill is the plan-writing wrapper for this project. It does NOT replace `su
 
 ## Before saving the plan
 
-6. **Run a structured self-audit and include its output as a "Plan compliance check" section at the end of the plan.** The audit covers:
-
-   - `references/anti-patterns.md` — walk it top to bottom. For each anti-pattern row, quote it and state which plan sections were checked. Do not paraphrase.
-   - For every layer doc the plan touches: walk its "Common Mistakes" table the same way.
-   - For every type signature in "Shared Contracts" / "Canonical names" / equivalents: cross-check against the relevant Decision Matrix. List each signature and the matrix row that authorizes it.
-   - `references/date-handling.md` — if any plan field is a date or datetime, walk the lifecycle checklist (descriptor → DTO → repository → frontend interface → rehydrate → createJsonApi → custom Cypher casts) and confirm the plan honors each rule.
-   - A row may say OK only by citing a skill section. "Precedent in existing code" or "documented in a code comment" is never a valid justification; a row that has nothing better is a violation or a question for the user (step 3).
-   - Reshape (step 10): filled in after step 10 has run (this audit runs before the plan is saved, step 10 after superpowers saves it); one row confirming superpowers' `> **For agentic workers:**` header was replaced with the nja header, and one row confirming no task has a "Commit" step and the plan never says "frequent commits".
-   - E2E task (step 11): one row confirming the e2e task is present, or stating why it is not applicable (the spec changes no page, route or rendered component, or the repo has no e2e suite).
-   - Readiness (step 12): one row confirming no step leaves a decision to the implementer, and one row listing how many existing paths and symbols the plan names and confirming each was checked against the repo.
-   - If the audit surfaces a contradiction, fix the plan and re-run the audit — do not save a plan with known violations.
+6. **Check the plan against the rules before saving, without writing the check into the plan.** Walk `references/anti-patterns.md` top to bottom, the "Common Mistakes" table of every layer doc the plan touches, and `references/date-handling.md` when a field is a date or datetime. Fix every contradiction in the plan. Do not add a "Plan compliance check" section: the independent audit checks the plan's code against the rules anyway, and a written table costs tokens to write, costs tokens to audit, and produces findings about its own wording.
 
 ---
 
@@ -58,9 +48,9 @@ This skill is the plan-writing wrapper for this project. It does NOT replace `su
 
    b. `pnpm build` (all packages green). Check for a running dev server first, as step 4 of the execution protocol written by nja-delegate-implementation describes.
 
-   c. `pnpm test` (no regressions)
+   c. `pnpm test` (no regressions). A failing spec outside the files the plan lists is triaged with evidence: when it pins behaviour the spec deliberately changes, update it and list the update in the hand-back; when it shows a change the spec never mentions, do not decide it: leave the code and that spec as they are and report it to the user as an open question.
 
-   d. **E2E run.** Only when the plan has an e2e task (step 11): run the repo's e2e runner once on that task's spec files, as the e2e task text in step 11 describes, before the reviews below.
+   d. **E2E run.** Only when the plan has an e2e task (step 11): run the repo's e2e runner once on that task's spec files and on the existing e2e spec files that visit a route or page the plan changes, as the e2e task text in step 11 describes, before the reviews below.
 
    e. **Architecture audit of the diff by a fresh sub-agent.** The review phase is REVIEW ROUNDS, each with TWO fresh sub-agents dispatched in the same message: this architecture auditor and the spec reviewer in f. The auditor (model: opus) runs the `nja-verify` skill on the diff. Give it the repo root and the files that were already dirty before implementation, never the coordinator's reasoning. The review phase precedes hand-off back to the user.
 
@@ -100,7 +90,7 @@ This skill is the plan-writing wrapper for this project. It does NOT replace `su
 
 11. **E2E task.** When the spec changes a page, route or rendered component AND the repo has an e2e suite (`scripts/e2e.sh` and `apps/web/tests/README.md` exist; see `nja-e2e` § "Before anything: read the repo's own guide"; if none, skip this rule and say so in the plan), the plan MUST contain an e2e task. A plan that needs it and lacks it is incomplete. The e2e task follows this text:
 
-    The plan fixes, before any code exists: the coverage entries as Given/When/Then with ids (next free ids from the repo's coverage document, following nja-e2e conventions), the seed data each entry needs, the visible labels exactly as the app renders them in its UI language, and the `data-testid` names every assertion needs. The test ids go in Shared Contracts so the task that owns the UI adds them. ONE implementer owns the e2e task: it writes the spec files, the seed additions and the not-yet-covered coverage entries, and runs nothing (no stack is up during the parallel round; an unrun e2e spec is expected, not a defect). The final verification task runs the repo's e2e runner once on those spec files, after the unit test run and before the reviews, plus the re-run after review fixes in the final verification task if a review round changed code. Each failure is triaged as code or test with evidence. A pre-existing e2e spec is never edited unless it also fails on clean HEAD. A spec written by the e2e task may be edited only when evidence (trace, screenshot, DOM) shows a test defect (wrong selector, label or seed); the edit never changes a Given/When/Then assertion, and a needed assertion change goes to the user. Report every test edit separately. Passing entries are marked covered following nja-e2e.
+    The plan fixes, before any code exists: the coverage entries as Given/When/Then with ids (next free ids from the repo's coverage document, following nja-e2e conventions), the seed data each entry needs, the visible labels exactly as the app renders them in its UI language, and the `data-testid` names every assertion needs. The test ids go in Shared Contracts so the task that owns the UI adds them. ONE implementer owns the e2e task: it writes the spec files, the seed additions and the not-yet-covered coverage entries, and runs nothing (no stack is up during the parallel round; an unrun e2e spec is expected, not a defect). The final verification task runs the repo's e2e runner once on those spec files plus the existing e2e spec files that visit a route or page the plan changes (found by grepping the repo's e2e folder for those routes; the plan audit leaves that breakage to this run), after the unit test run and before the reviews, plus the re-run after review fixes in the final verification task if a review round changed code. Each failure is triaged as code or test with evidence. A pre-existing e2e spec is never edited unless it also fails on clean HEAD; one that fails only with the new code is reported to the user with the evidence and the assertion change it needs. A spec written by the e2e task may be edited only when evidence (trace, screenshot, DOM) shows a test defect (wrong selector, label or seed); the edit never changes a Given/When/Then assertion, and a needed assertion change goes to the user. Report every test edit separately. Passing entries are marked covered following nja-e2e.
 
 ---
 
@@ -120,14 +110,22 @@ After absorbing the rules above, invoke `superpowers:writing-plans` to produce t
 
 ## Independent plan audit (after the plan is saved)
 
-Your own self-audit (step 6) is not enough: you read the plan through the reasoning that wrote it. After step 10 (reshape) has been applied and the self-audit's reshape rows are filled in, and before handing the plan back:
+Your own check (step 6) is not enough: you read the plan through the reasoning that wrote it. After step 10 (reshape), and before handing the plan back, run ONE audit round with TWO auditors, each owning half of the tasks. The audit looks only for what the implementation's lint, build and test run will not catch; that run is cheaper and certain for the rest. One auditor on a lookup budget runs out before it reaches half the plan; two halves get covered in the same time for about twice the tokens.
 
-- Dispatch ONE fresh sub-agent (model: opus) that invokes the `nja-verify` skill in plan mode on the saved plan file. Give it only the plan path, the spec path and the repo root (it must judge whether the repo has an e2e suite), never your reasoning.
-- Compare the auditor's paraphrase (its "What this plan builds" section) with the spec. If it describes something the spec does not ask for, or misses something the spec does ask for, the plan is unclear where the auditor misread it. Treat each mismatch as BLOCKING and rewrite that part of the plan.
-- Fix every BLOCKING finding in the plan, then dispatch a NEW fresh auditor. Repeat until clean, max 3 rounds.
-- If BLOCKING findings remain after round 3, surface them to the user instead of declaring done.
+1. **Script first.** Run `${CLAUDE_PLUGIN_ROOT}/scripts/nja-plan-check.sh <plan> <repo-root>`. Fix every BLOCKING line and run it again until it exits 0. It costs nothing; never hand an auditor what it already checks.
 
-When you hand the plan back to the user, prepend a one-sentence confirmation that the "Plan compliance check" section is present and clean and that the independent plan audit came back with no BLOCKING findings and a paraphrase that matches the spec (say in which round), and that the reshape in step 10 was applied (nja header in place, no commit steps, no Execution Handoff menu). If either surfaced anything you could not resolve, surface it explicitly instead of declaring done.
+2. **Two auditors, in one message.** Split the implementation tasks into two halves of about equal plan length, keeping each task whole (the e2e task counts; the final verification task does not). Dispatch two fresh sub-agents (model: opus) that run the `nja-verify` skill in plan mode, one with focus `part: <first half> + plan`, the other with focus `part: <second half>`. Give each the plan path, the spec path, the repo root and the script's output (its `CHECK` lines included), never your reasoning. A plan with three tasks or fewer gets one auditor with no focus.
+
+3. **Read its paraphrase** ("What this plan builds") against the spec. Whatever it describes that the spec does not ask for, or misses that the spec does ask for, marks a part of the plan that is unclear. Treat each mismatch as BLOCKING · recheck and rewrite that part.
+
+4. **Act on each finding by its class** (`nja-verify` § "Finding classes"):
+   - BLOCKING · recheck and BLOCKING · fix-only: fix in the plan.
+   - NEEDS-CARLO: collect them all and ask the user in ONE message (step 3 of this skill), then record each answer in the plan as a decision, with who decided and the date.
+   - DEFENCE-IN-DEPTH and COSMETIC: report them in the hand-back.
+
+5. **One small recheck, only when needed.** When a BLOCKING · recheck fix (or an answer from the user) changed a task, dispatch ONE fresh auditor with focus `tasks: <the changed tasks>`, then run the script again. Fix-only fixes are never rechecked. There is no second full audit. If BLOCKING findings remain after the recheck, surface them to the user instead of declaring done.
+
+When you hand the plan back to the user, prepend a one-sentence confirmation that the script exits 0, that the independent plan audit came back with no BLOCKING findings and a paraphrase that matches the spec (say how many auditors ran and whether a recheck ran), and that the reshape in step 10 was applied (nja header in place, no commit steps, no Execution Handoff menu). If either surfaced anything you could not resolve, surface it explicitly instead of declaring done.
 
 ## Linear (when configured)
 

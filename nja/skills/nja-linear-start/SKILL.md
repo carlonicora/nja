@@ -87,8 +87,10 @@ A `Plan` without a `Spec`: ask Carlo how to proceed.
 - **Brainstorm.** Invoke `superpowers:brainstorming`. Give it the issue's
   title and description as the starting request, and this hand-off text:
 
-  > After the design is approved, the plan step is `nja-writing-plan`, not
-  > plain `superpowers:writing-plans`. Save the spec, but never commit it.
+  > When the spec is written, run `nja-spec-check` instead of the builder
+  > check. After the design is approved, the plan step is
+  > `nja-writing-plan`, not plain `superpowers:writing-plans`. Save the
+  > spec, but never commit it.
   > The Linear issue identifier is `<ID>`.
 
   Brainstorming does not return here; it chains into `nja-writing-plan`,

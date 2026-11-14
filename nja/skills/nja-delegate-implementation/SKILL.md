@@ -135,12 +135,21 @@ none, write "None — the spec and plan are complete." Do not pad this.>
    this build output. Lint must reach 0 errors; pre-existing warnings are
    fine. Fix any failures yourself and re-run — do not re-dispatch a sub-agent
    for them. The sub-agents never ran lint, build, or the full test suite, so a
-   failure here is yours to resolve.
+   failure here is yours to resolve. A failing spec outside the files the plan
+   lists is expected: the plan audit leaves that kind of breakage to this run.
+   Triage it with evidence. When it pins behaviour the spec deliberately
+   changes, update it and list the update in the hand-back. When it shows a
+   change the spec never mentions, do not decide it: leave the code and that
+   spec as they are and report it to the user as an open question.
 
    Then, if the plan has an e2e task, run the repo's e2e runner once on the e2e
-   task's spec files, after the unit test run and before the reviews. Triage
-   each failure as code or test with evidence. A pre-existing e2e spec is never
-   edited unless it also fails on clean HEAD. A spec written by the e2e task
+   task's spec files plus the existing e2e spec files that visit a route or
+   page the plan changes (grep the repo's e2e folder for those routes), after
+   the unit test run and before the reviews. Triage each failure as code or
+   test with evidence. A pre-existing e2e spec is never edited unless it also
+   fails on clean HEAD; one that fails only with the new code is reported to
+   the user with the evidence and the assertion change it needs. A spec
+   written by the e2e task
    may be edited only when evidence (trace, screenshot, DOM) shows a test
    defect (wrong selector, label or seed); the edit never changes a
    Given/When/Then assertion, and a needed assertion change goes to the user.
